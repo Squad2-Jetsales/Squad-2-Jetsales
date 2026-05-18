@@ -20,12 +20,24 @@ const base = {
   },
 };
 
+// Provedores gerenciados (Render, Supabase, Neon, Heroku) exigem SSL.
+// Se a connection string vier por DATABASE_URL, embrulha em { connectionString, ssl }
+// para o pg aceitar o handshake — rejectUnauthorized:false porque os certs
+// dessas plataformas geralmente são auto-assinados/intermediários.
+function productionConnection() {
+  if (!process.env.DATABASE_URL) return base.connection;
+  return {
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  };
+}
+
 module.exports = {
   development: base,
   test: { ...base, connection: { ...base.connection, database: `${base.connection.database}_test` } },
   production: {
     ...base,
-    connection: process.env.DATABASE_URL || base.connection,
+    connection: productionConnection(),
     pool: { min: 2, max: 20 },
   },
 };
