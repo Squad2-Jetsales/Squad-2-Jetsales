@@ -49,7 +49,7 @@ export default function LoginPage() {
         if (err.status === 401) {
           toast.error("Email ou senha inválidos");
         } else if (err.status === 0) {
-          toast.error("Backend não configurado. Defina VITE_API_BASE_URL.");
+          toast.error("Não foi possível alcançar o backend. Verifique sua conexão.");
         } else {
           toast.error(err.message || "Não foi possível entrar");
         }

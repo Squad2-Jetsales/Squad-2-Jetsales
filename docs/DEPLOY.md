@@ -30,17 +30,31 @@ Mudancas relacionadas a deploy devem ser feitas em branch propria e revisadas an
 
 O frontend Vite/React e publicado na Vercel.
 
-Variavel obrigatoria:
+### Proxy de API via rewrite
+
+O `vercel.json` reescreve toda requisicao em `/api/*` para o backend no Render:
+
+```json
+{ "source": "/api/(.*)", "destination": "https://squad-2-jetsales-api.onrender.com/api/$1" }
+```
+
+Por que isso e necessario:
+
+- Cookies entre `vercel.app` e `onrender.com` sao **third-party**.
+- Chrome, Firefox e Edge bloqueiam cookies third-party por padrao (Privacy Sandbox, Enhanced Tracking Protection, etc.), inclusive os que carregam o `csrf_token` do esquema double-submit.
+- Com o rewrite, a request sai do mesmo origin do frontend e os cookies viram **first-party** — o navegador aceita normalmente, e o login + CSRF funcionam pra todos os usuarios sem precisar mexer em configuracoes de privacidade.
+
+### Variavel de ambiente
 
 ```env
-VITE_API_BASE_URL=https://squad-2-jetsales-api.onrender.com
+VITE_API_BASE_URL=
 ```
 
 Regras importantes:
 
-- Configure `VITE_API_BASE_URL` em `Production`.
-- Sempre que a variavel for criada ou alterada, faca um novo redeploy da Vercel.
-- Se o frontend estiver chamando `localhost:3001`, a variavel nao foi aplicada corretamente ou faltou redeploy.
+- Em **producao** (Vercel), deixe `VITE_API_BASE_URL` **vazio** ou nao configure. O client.ts monta URLs relativas (`/api/v1/...`) que sao resolvidas pelo rewrite.
+- Em **desenvolvimento** local, configure `VITE_API_BASE_URL=http://localhost:3001` no `.env.local`, ja que nao ha proxy nesse ambiente.
+- Se o frontend de producao estiver chamando `https://squad-2-jetsales-api.onrender.com/...` diretamente, a variavel ficou setada — remova e faca redeploy.
 
 ## 4. Render - Backend
 
@@ -176,7 +190,8 @@ curl -i https://squad-2-jetsales-api.onrender.com/health
 | Login retorna `200` mas `/auth/me` da `401` | Cookie nao persistiu | Conferir `NODE_ENV=production`, `trust proxy`, `SameSite=None`, `Secure` |
 | `502 Bad Gateway` | Backend caiu ou health falhou | Logs do Render Web Service |
 | `relation "users" does not exist` | Migration nao rodou | Render Shell: `npm run migrate` |
-| Frontend faz request para `localhost:3001` | Vercel sem `VITE_API_BASE_URL` ou sem redeploy | Vercel env + redeploy |
+| Frontend faz request para `localhost:3001` em producao | `VITE_API_BASE_URL` ficou setada com valor antigo | Remover a env da Vercel + redeploy (em prod ela fica vazia) |
+| `403 CSRF token invalido` em POST/PATCH/PUT/DELETE | Cookies third-party bloqueados | Confirmar que rewrite `/api/*` esta ativo no `vercel.json` |
 | `no pg_hba.conf entry` | SSL desligado | Confirmar `NODE_ENV=production` |
 
 ## 11. Seguranca
