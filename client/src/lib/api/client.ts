@@ -16,7 +16,8 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE_URL = rawBaseUrl ? rawBaseUrl.replace(/\/$/, "") : "";
 const API_PREFIX = "/api/v1";
 
 const STATE_CHANGING = new Set(["POST", "PATCH", "PUT", "DELETE"]);
