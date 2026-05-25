@@ -9,13 +9,15 @@ function readWebhookSecret() {
   ).trim();
 }
 
+function normalizeEvolutionEvent(event) {
+  if (!event || typeof event !== 'string') return '';
+  return event.trim().replace(/\./g, '_').toUpperCase();
+}
+
 function resolveEventName(payloadEvent, slugEvent) {
-  if (payloadEvent) return String(payloadEvent).trim().toUpperCase();
+  if (payloadEvent) return normalizeEvolutionEvent(payloadEvent);
   if (!slugEvent) return 'UNKNOWN';
-  return String(slugEvent)
-    .trim()
-    .toUpperCase()
-    .replace(/-/g, '_');
+  return normalizeEvolutionEvent(String(slugEvent).replace(/-/g, '_'));
 }
 
 function resolveInstanceName(payload = {}) {
