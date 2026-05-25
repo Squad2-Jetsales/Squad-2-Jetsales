@@ -16,7 +16,8 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE_URL = rawBaseUrl ? rawBaseUrl.replace(/\/$/, "") : "";
 const API_PREFIX = "/api/v1";
 
 const STATE_CHANGING = new Set(["POST", "PATCH", "PUT", "DELETE"]);
@@ -63,14 +64,11 @@ export interface ApiFetchOptions extends Omit<RequestInit, "body"> {
 }
 
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  if (!API_BASE_URL) {
-    throw new ApiError(
-      "VITE_API_BASE_URL não está configurado. Defina a URL do backend para conectar.",
-      0,
-      "NO_API_URL",
-    );
-  }
-
+  // API_BASE_URL pode ser vazio quando o frontend usa rewrite proxy
+  // (ex.: Vercel reescreve /api/* pro Render). Nesse caso a request sai
+  // do próprio origin do front — cookies viram first-party e o navegador
+  // não bloqueia. Quando VITE_API_BASE_URL está setado, o request vai
+  // direto cross-site (modo dev / quem usar fora da Vercel).
   const method = (options.method ?? "GET").toUpperCase();
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers: Record<string, string> = {

@@ -1,7 +1,6 @@
 // server/src/app.js
 require('dotenv').config();
 
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -9,6 +8,11 @@ const cookieParser = require('cookie-parser');
 const errorMiddleware = require('./middlewares/error.middleware');
 
 const app = express();
+
+// Atrás de proxy (Render, Fly, Heroku, Nginx) precisamos confiar no
+// X-Forwarded-* para que `req.secure` seja true em HTTPS e cookies com
+// `Secure: true` cheguem ao navegador.
+app.set('trust proxy', 1);
 
 /* -------------------------------------------------------------------------- */
 /*  Middlewares globais                                                       */

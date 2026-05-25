@@ -7,7 +7,9 @@ import type { Session } from "@/types/domain";
 export const SESSION_KEY = ["session"] as const;
 
 /** When no backend is configured, return a stub session so the UI is navigable
- * for design review. This NEVER runs when VITE_API_BASE_URL is set. */
+ * for design review (Lovable, Stackblitz, etc.). NEVER ativa em build de
+ * produção — lá, apiBaseUrl vazio significa "usar rewrite proxy da Vercel",
+ * não "rodar em modo demo". */
 const PREVIEW_SESSION: Session = {
   user: {
     id: "preview-user",
@@ -27,7 +29,7 @@ const PREVIEW_SESSION: Session = {
   },
 };
 
-export const isPreviewMode = !apiBaseUrl;
+export const isPreviewMode = !apiBaseUrl && import.meta.env.DEV;
 
 export function useSession() {
   const query = useQuery<Session, ApiError>({

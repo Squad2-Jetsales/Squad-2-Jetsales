@@ -52,6 +52,7 @@ import { flowsApi } from "@/lib/api/flows";
 import { chatbotsApi } from "@/lib/api/chatbots";
 import { ApiError } from "@/lib/api/client";
 import { AdjustWithAIDialog } from "@/components/chatbot/AdjustWithAIDialog";
+import { FlowTesterDialog } from "@/components/chatbot/FlowTesterDialog";
 import type { FlowEdge, FlowNode, FlowNodeData, FlowNodeType, FlowWithGraph } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -106,6 +107,16 @@ function MessageNode({ data, selected }: NodeProps) {
   return (
     <NodeShell color="hsl(var(--node-message))" icon={<MessageSquare className="h-3.5 w-3.5" />} label="Enviar Mensagem" selected={selected}>
       <p className="line-clamp-3 text-muted-foreground">{d.data.text || "Sem mensagem"}</p>
+    </NodeShell>
+  );
+}
+
+function CaptureNode({ data, selected }: NodeProps) {
+  const d = data as RFNodeData;
+  return (
+    <NodeShell color="hsl(var(--node-message))" icon={<MessageSquare className="h-3.5 w-3.5" />} label="Capturar Resposta" selected={selected}>
+      <p className="line-clamp-3 text-muted-foreground">{d.data.text || "Sem pergunta"}</p>
+      {d.data.variable && <p className="mt-2 text-[11px] text-muted-foreground">Salva em: {d.data.variable}</p>}
     </NodeShell>
   );
 }
@@ -199,6 +210,7 @@ function EndNode({ selected }: NodeProps) {
 }
 
 const NODE_TYPES = {
+  capture: CaptureNode,
   message: MessageNode,
   menu: MenuNode,
   condition: ConditionNode,
@@ -245,6 +257,10 @@ function toRFEdge(e: FlowEdge): Edge {
     source: e.sourceNodeId,
     target: e.targetNodeId,
     sourceHandle: e.sourceHandle ?? undefined,
+    data: {
+      conditionType: e.conditionType ?? null,
+      conditionValue: e.conditionValue ?? null,
+    },
     type: "smoothstep",
     style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
   };
@@ -263,12 +279,15 @@ function rfToDomainNode(n: Node, flowId: string): FlowNode {
 }
 
 function rfToDomainEdge(e: Edge, flowId: string): FlowEdge {
+  const edgeData = (e.data ?? {}) as { conditionType?: string | null; conditionValue?: string | null };
   return {
     id: e.id,
     flowId,
     sourceNodeId: e.source,
     targetNodeId: e.target,
     sourceHandle: e.sourceHandle ?? null,
+    conditionType: edgeData.conditionType ?? undefined,
+    conditionValue: edgeData.conditionValue ?? undefined,
   };
 }
 
@@ -292,6 +311,7 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [bannerVisible, setBannerVisible] = useState(params.get("generated") === "1");
+  const [testerOpen, setTesterOpen] = useState(params.get("tester") === "1");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorNodeIds, setErrorNodeIds] = useState<Set<string>>(new Set());
   const [adjustOpen, setAdjustOpen] = useState(false);
@@ -530,9 +550,9 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
           <Sparkles className="h-4 w-4" />
           Ajustar com IA
         </Button>
-        <Button variant="ghost" disabled>
+        <Button variant="ghost" onClick={() => setTesterOpen(true)}>
           <Play className="h-4 w-4" />
-          Testar Fluxo
+          Testar Bot
         </Button>
         <Button onClick={() => publish.mutate()} disabled={publish.isPending}>
           {publish.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -646,6 +666,12 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
           pushHistory({ nodes: rfNodes, edges: rfEdges });
         }}
       />
+      <FlowTesterDialog
+        flowId={flow.id}
+        open={testerOpen}
+        onOpenChange={setTesterOpen}
+        title={flow.name}
+      />
     </div>
   );
 }
@@ -673,6 +699,20 @@ function NodeEditor({ node, onChange, onSave, onDelete }: { node: Node; onChange
         <div className="space-y-2">
           <Label htmlFor="msg-text">Mensagem</Label>
           <Textarea id="msg-text" rows={5} value={d.text ?? ""} onChange={(e) => onChange({ text: e.target.value })} />
+        </div>
+      )}
+
+      {type === "capture" && (
+        <div className="space-y-2">
+          <Label htmlFor="capture-text">Mensagem</Label>
+          <Textarea id="capture-text" rows={5} value={d.text ?? ""} onChange={(e) => onChange({ text: e.target.value })} />
+          <Label htmlFor="capture-variable">Variavel</Label>
+          <Input
+            id="capture-variable"
+            value={d.variable ?? ""}
+            onChange={(e) => onChange({ variable: e.target.value })}
+            placeholder="input"
+          />
         </div>
       )}
 

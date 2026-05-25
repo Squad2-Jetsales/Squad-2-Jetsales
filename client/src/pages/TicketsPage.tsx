@@ -30,6 +30,13 @@ import { ticketsApi, type ConversationFilter, type ConversationWithContact } fro
 import { ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
+/** Converte string em Date apenas se for válida; evita "Invalid time value". */
+function safeDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export default function TicketsPage() {
   const [filter, setFilter] = useState<ConversationFilter>("open");
   const [search, setSearch] = useState("");
@@ -47,8 +54,8 @@ export default function TicketsPage() {
     const q = search.toLowerCase();
     return list.data.filter(
       (c) =>
-        c.contact.name.toLowerCase().includes(q) ||
-        c.contact.phone.includes(q) ||
+        (c.contact?.name ?? "").toLowerCase().includes(q) ||
+        (c.contact?.phone ?? "").includes(q) ||
         (c.lastMessagePreview ?? "").toLowerCase().includes(q),
     );
   }, [list.data, search]);
@@ -152,7 +159,10 @@ function ConversationListItem({
   onSelect: () => void;
 }) {
   const isOpen = conv.status === "open" || conv.status === "waiting";
-  const time = formatDistanceToNow(new Date(conv.createdAt), { locale: ptBR, addSuffix: false });
+  const parsedCreatedAt = safeDate(conv.createdAt);
+  const time = parsedCreatedAt
+    ? formatDistanceToNow(parsedCreatedAt, { locale: ptBR, addSuffix: false })
+    : "";
   return (
     <button
       type="button"
@@ -165,14 +175,14 @@ function ConversationListItem({
       {selected && <span className="absolute left-0 top-0 h-full w-[3px] bg-primary" />}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{conv.contact.name || conv.contact.phone}</span>
-          {conv.unreadCount > 0 && (
+          <span className="truncate text-sm font-medium text-foreground">{conv.contact?.name || conv.contact?.phone || "Contato"}</span>
+          {(conv.unreadCount ?? 0) > 0 && (
             <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
               {conv.unreadCount}
             </span>
           )}
         </div>
-        <p className="truncate text-xs text-muted-foreground">{conv.contact.phone}</p>
+        <p className="truncate text-xs text-muted-foreground">{conv.contact?.phone || "—"}</p>
         <p className="mt-1 truncate text-xs text-muted-foreground">{conv.lastMessagePreview ?? "—"}</p>
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <Badge
@@ -274,8 +284,8 @@ function ChatWindow({ conversationId }: { conversationId: string }) {
       {/* Header */}
       <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-3">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-foreground">{c.contact.name || c.contact.phone}</h2>
-          <p className="text-xs text-muted-foreground">{c.contact.phone}</p>
+          <h2 className="truncate text-sm font-semibold text-foreground">{c.contact?.name || c.contact?.phone || "Contato"}</h2>
+          <p className="text-xs text-muted-foreground">{c.contact?.phone || "—"}</p>
         </div>
         {c.currentFlowPath && (
           <div className="ml-auto hidden items-center gap-1.5 rounded-full bg-primary-soft px-3 py-1 text-xs text-primary md:flex">
@@ -307,11 +317,11 @@ function ChatWindow({ conversationId }: { conversationId: string }) {
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto bg-chat-bg p-4 scrollbar-thin">
-        {c.messages.length === 0 && (
+        {(c.messages ?? []).length === 0 && (
           <p className="text-center text-xs text-muted-foreground">Sem mensagens nesta conversa</p>
         )}
         <div className="space-y-2">
-          {c.messages.map((m) => (
+          {(c.messages ?? []).map((m) => (
             <MessageBubble key={m.id} direction={m.direction} content={m.content} createdAt={m.createdAt} />
           ))}
         </div>
@@ -357,7 +367,8 @@ function MessageBubble({
   createdAt: string;
 }) {
   const isOut = direction === "out";
-  const time = format(new Date(createdAt), "HH:mm");
+  const parsed = safeDate(createdAt);
+  const time = parsed ? format(parsed, "HH:mm") : "";
   return (
     <div className={cn("flex", isOut ? "justify-end" : "justify-start")}>
       <div
