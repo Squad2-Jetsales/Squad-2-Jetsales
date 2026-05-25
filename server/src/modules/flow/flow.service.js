@@ -32,6 +32,58 @@ const DB_TYPE_TO_ENGINE = {
 const toDbType     = (type) => NODE_TYPE_TO_DB[type]    || type;
 const toEngineType = (type) => DB_TYPE_TO_ENGINE[type]  || type;
 
+function normalizeEdgeCondition(edge) {
+  if (edge?.condition && edge.condition.operator && edge.condition.value != null) {
+    return edge.condition;
+  }
+
+  const operator =
+    edge?.conditionType ??
+    edge?.condition_type ??
+    null;
+
+  const value =
+    edge?.conditionValue ??
+    edge?.condition_value ??
+    null;
+
+  if (!operator || value == null) return null;
+  return { operator, value };
+}
+
+function buildConditionEvaluator(rawCondition) {
+  if (!rawCondition || !rawCondition.operator) return null;
+
+  const operator = String(rawCondition.operator).trim().toLowerCase();
+  const value = rawCondition.value;
+
+  return (input) => {
+    if (input == null) return false;
+
+    const normalizedInput = String(input).trim().toLowerCase();
+    const normalizedValue = String(value).trim().toLowerCase();
+
+    switch (operator) {
+      case '==':
+      case 'equals':
+        return normalizedInput === normalizedValue;
+      case '!=':
+      case 'not_equals':
+        return normalizedInput !== normalizedValue;
+      case 'contains':
+        return normalizedInput.includes(normalizedValue);
+      case '>':
+      case 'gt':
+        return Number(input) > Number(value);
+      case '<':
+      case 'lt':
+        return Number(input) < Number(value);
+      default:
+        return normalizedInput.includes(normalizedValue);
+    }
+  };
+}
+
 class FlowService {
 
   async createFlow(flowData) {
@@ -314,15 +366,8 @@ class FlowService {
       const to      = uuidToLabel[toRaw]   || toRaw;
 
       // Converte condition objeto → função que o engine entende
-      const raw = e.condition || null;
-      let condition = null;
-      if (raw && raw.operator && raw.value != null) {
-        const val = String(raw.value).toLowerCase();
-        condition = (input) => {
-          if (input == null) return false;
-          return String(input).toLowerCase().includes(val);
-        };
-      }
+      const raw = normalizeEdgeCondition(e);
+      const condition = buildConditionEvaluator(raw);
 
       return { from, to, condition };
     });

@@ -90,6 +90,7 @@ export interface MenuOption {
 export interface FlowNodeData {
   label?: string;
   text?: string;
+  variable?: string;
   options?: MenuOption[];
   condition?: {
     field: string;
