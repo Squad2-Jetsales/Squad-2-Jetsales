@@ -54,4 +54,91 @@ async function findById(organizationId, id) {
     .first();
 }
 
-module.exports = { listByOrganization, findById };
+/* -------------------------------------------------------------------------
+ * Variantes com contato/mensagens para a tela de Tickets.
+ *
+ * As funções acima (listByOrganization / findById) seguem retornando a linha
+ * crua e NÃO foram alteradas — outros consumidores (ex.: message.service)
+ * dependem delas. As funções abaixo fazem JOIN com contacts e devolvem o
+ * formato camelCase com contact aninhado que o frontend espera, sem quebrar
+ * com lista vazia.
+ * ---------------------------------------------------------------------- */
+
+const CONTACT_SELECT = [
+  ...COLUMNS.map((col) => `${TABLE}.${col}`),
+  'contacts.name as contact_name',
+  'contacts.phone as contact_phone',
+];
+
+function shapeConversation(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    contactId: row.contact_id,
+    chatbotId: row.chatbot_id,
+    whatsappConnectionId: row.whatsapp_connection_id,
+    status: row.status,
+    currentFlowPath: row.current_flow_path,
+    unreadCount: row.unread_count ?? 0,
+    lastMessagePreview: row.last_message_preview ?? null,
+    lastMessageAt: row.last_message_at ?? null,
+    closedAt: row.closed_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    contact: {
+      id: row.contact_id,
+      name: row.contact_name || '',
+      phone: row.contact_phone || '',
+    },
+  };
+}
+
+function shapeMessage(row) {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    direction: row.direction,
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+async function listWithContact(organizationId, { contactId, chatbotId, status, limit = 50, offset = 0 } = {}) {
+  const query = db(TABLE)
+    .select(CONTACT_SELECT)
+    .leftJoin('contacts', 'contacts.id', `${TABLE}.contact_id`)
+    .where(`${TABLE}.organization_id`, organizationId)
+    .orderBy(`${TABLE}.created_at`, 'desc')
+    .limit(Math.min(Math.max(Number(limit) || 50, 1), 200))
+    .offset(Math.max(Number(offset) || 0, 0));
+
+  if (contactId) query.where(`${TABLE}.contact_id`, contactId);
+  if (chatbotId) query.where(`${TABLE}.chatbot_id`, chatbotId);
+  if (status) query.where(`${TABLE}.status`, status);
+
+  const rows = await query;
+  return rows.map(shapeConversation);
+}
+
+async function findByIdWithDetail(organizationId, id) {
+  const row = await db(TABLE)
+    .select(CONTACT_SELECT)
+    .leftJoin('contacts', 'contacts.id', `${TABLE}.contact_id`)
+    .where(`${TABLE}.organization_id`, organizationId)
+    .where(`${TABLE}.id`, id)
+    .first();
+
+  if (!row) return null;
+
+  const conversation = shapeConversation(row);
+  const messages = await db('messages')
+    .select('id', 'conversation_id', 'direction', 'content', 'created_at')
+    .where('conversation_id', id)
+    .orderBy('created_at', 'asc')
+    .limit(500);
+  conversation.messages = messages.map(shapeMessage);
+  return conversation;
+}
+
+module.exports = { listByOrganization, findById, listWithContact, findByIdWithDetail };

@@ -10,6 +10,6 @@ const VALID_STATUS = ['open', 'closed', 'waiting', 'resolved'];
 
 exports.VALID_STATUS = VALID_STATUS;
 
-exports.list = (organizationId, filters) => Conversation.listByOrganization(organizationId, filters);
+exports.list = (organizationId, filters) => Conversation.listWithContact(organizationId, filters);
 
-exports.findById = (organizationId, id) => Conversation.findById(organizationId, id);
+exports.findById = (organizationId, id) => Conversation.findByIdWithDetail(organizationId, id);
