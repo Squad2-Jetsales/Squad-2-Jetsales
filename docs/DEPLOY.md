@@ -97,6 +97,11 @@ Regras importantes:
 | `FRONTEND_ORIGINS=https://squad-2-jetsales-wheat.vercel.app` | Sim | Origem permitida para CORS |
 | `SETUP_SECRET=<secret forte>` | Sim | Token usado pela rota de setup inicial |
 | `COOKIE_DOMAIN=` | Nao | Pode ficar ausente ou vazio |
+| `EVOLUTION_API_BASE_URL=<url-da-evolution>` | Nao | Necessaria para a integracao WhatsApp via Evolution API |
+| `EVOLUTION_API_KEY=<api-key>` | Nao | Chave enviada no header `apikey` |
+| `EVOLUTION_API_INSTANCE=<instancia-padrao>` | Nao | Instancia default para testes administrativos |
+| `EVOLUTION_WEBHOOK_SECRET=<secret-forte>` | Nao, mas recomendado | Segredo validado no webhook do backend |
+| `EVOLUTION_WEBHOOK_URL=https://squad-2-jetsales-api.onrender.com/api/v1/webhooks/evolution` | Nao, mas recomendado | URL publica usada ao configurar webhook na Evolution |
 
 Notas:
 
@@ -104,6 +109,7 @@ Notas:
 - `COOKIE_DOMAIN` pode ficar ausente ou vazio.
 - Gere secrets com valores fortes.
 - Nunca commite secrets.
+- A Evolution API deve ser integrada apenas pelo backend; o frontend continua usando `/api/v1/...` via Vercel.
 
 ## 7. Migrations em producao
 
