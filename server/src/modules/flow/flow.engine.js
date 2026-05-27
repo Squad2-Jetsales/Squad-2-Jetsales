@@ -58,11 +58,52 @@ class FlowEngine {
     }
 
     getNextNodeId(currentNodeId, userInput) {
+        const currentNode = this.getNode(currentNodeId);
         const possibleEdges = this.edges.filter(edge => edge.from === currentNodeId);
+
+        // Condition node decide pelo source_handle ('true'/'false') desenhado
+        // no editor — a condição vive no node (field/operator/value), não na
+        // edge. Sem isso o engine seguia sempre pela primeira edge (B-05).
+        if (currentNode.type === 'condition') {
+            const handle = this.evaluateNodeCondition(currentNode, userInput) ? 'true' : 'false';
+            const match = possibleEdges.find(e => e.sourceHandle === handle);
+            if (match) return match.to;
+            // Fallback: handle sem edge desenhada → primeira disponível ou para
+            return possibleEdges[0]?.to || currentNodeId;
+        }
+
         for (const edge of possibleEdges) {
             if (this.evaluateCondition(edge.condition, userInput)) return edge.to;
         }
         return currentNodeId;
+    }
+
+    // Avalia a condição declarada no node (Condition). `field` é o nome da
+    // variável no contexto (ou 'input' para usar o último input do usuário).
+    evaluateNodeCondition(node, userInput) {
+        const cond = node.condition;
+        if (!cond || !cond.operator) return false;
+
+        const fieldName = cond.field || 'input';
+        const rawValue = fieldName === 'input' ? userInput : this.context[fieldName];
+        if (rawValue == null) return false;
+
+        const op = String(cond.operator).trim().toLowerCase();
+        const a  = String(rawValue).trim().toLowerCase();
+        const b  = String(cond.value ?? '').trim().toLowerCase();
+
+        switch (op) {
+            case '==':
+            case 'equals':     return a === b;
+            case '!=':
+            case 'not_equals': return a !== b;
+            case 'contains':   return a.includes(b);
+            case '>':
+            case 'gt':         return Number(rawValue) >  Number(cond.value);
+            case '<':
+            case 'lt':         return Number(rawValue) <  Number(cond.value);
+            default:           return a.includes(b);
+        }
     }
 
     evaluateCondition(condition, input) {
@@ -95,8 +136,15 @@ class FlowEngine {
             case 'choice':
             case 'trigger':
             case 'condition':
-            case 'wait': // delay real entra na Onda 3 (B-06)
                 break;
+            case 'wait': {
+                // Bloqueia o engine pelo delay configurado, com teto de 60s
+                // (decisão de produto da Fase 2 — wait > 60s vira fila
+                // assíncrona na Fase 3 pra não segurar o request).
+                const ms = Math.min(Number(node.delay) || 0, 60_000);
+                if (ms > 0) await new Promise((resolve) => setTimeout(resolve, ms));
+                break;
+            }
             case 'api':
                 if (node.url && node.saveAs) {
                     const res  = await fetch(node.url);

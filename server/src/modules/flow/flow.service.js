@@ -385,7 +385,12 @@ class FlowService {
       const raw = normalizeEdgeCondition(e);
       const condition = buildConditionEvaluator(raw);
 
-      return { from, to, condition };
+      // Preserva sourceHandle para o engine decidir o caminho em Condition
+      // node (handles 'true' / 'false') — sem isso o engine ignora o
+      // desenho do editor (B-05).
+      const sourceHandle = e.source_handle ?? e.sourceHandle ?? null;
+
+      return { from, to, condition, sourceHandle };
     });
 
     return { ...flow, states, edges };

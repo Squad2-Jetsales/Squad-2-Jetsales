@@ -232,6 +232,10 @@ const BLOCK_PALETTE: Array<{
   // um node tipo "trigger". Só pode existir um por fluxo (lock no onDrop).
   { type: "trigger", label: "Início", icon: Zap, color: "hsl(var(--node-trigger))", defaults: {} },
   { type: "message", label: "Enviar Mensagem", icon: MessageSquare, color: "hsl(var(--node-message))", defaults: { text: "Olá!" } },
+  // Capture estava no NODE_TYPES, no NodeEditor e no engine, mas faltava o
+  // card no toolbox — sem ele Condition não recebia variável e caía sempre
+  // no branch false (B-15).
+  { type: "capture", label: "Capturar Resposta", icon: MessageSquare, color: "hsl(var(--node-message))", defaults: { text: "Qual seu nome?", variable: "input" } },
   { type: "menu", label: "Menu de Opções", icon: ListOrdered, color: "hsl(var(--node-menu))", defaults: { options: [{ id: crypto.randomUUID(), label: "Opção 1", value: "1" }] } },
   { type: "condition", label: "Condição", icon: GitBranch, color: "hsl(var(--node-condition))", defaults: { condition: { field: "input", operator: "==", value: "" } } },
   { type: "wait", label: "Aguardar", icon: Clock, color: "hsl(var(--node-wait))", defaults: { waitMs: 1000 } },
