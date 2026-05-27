@@ -34,17 +34,45 @@ exports.list = async (organizationId, { status, type } = {}) => {
 exports.findById = async (organizationId, id) =>
   db(TABLE).select('*').where({ organization_id: organizationId, id }).first();
 
+// Cria o chatbot já com um flow draft vazio (só com node trigger) e o promove
+// como activeFlowId — sem isso o editor cai em "sem fluxo ativo" assim que o
+// usuário entra. Tudo numa transação: ou tudo certo, ou nada.
 exports.create = async (organizationId, userId, data) => {
-  const [row] = await db(TABLE)
-    .insert({
-      organization_id: organizationId,
-      created_by:      userId || null,
-      name:            data.name,
-      description:     data.description || '',
-      type:            data.type,
-    })
-    .returning('*');
-  return row;
+  return db.transaction(async (trx) => {
+    const [chatbot] = await trx(TABLE)
+      .insert({
+        organization_id: organizationId,
+        created_by:      userId || null,
+        name:            data.name,
+        description:     data.description || '',
+        type:            data.type,
+      })
+      .returning('*');
+
+    const [flow] = await trx('flows')
+      .insert({
+        chatbot_id: chatbot.id,
+        name:       'Fluxo inicial',
+        status:     'draft',
+        version:    1,
+      })
+      .returning('*');
+
+    await trx('flow_nodes').insert({
+      flow_id:    flow.id,
+      type:       'trigger',
+      data:       { label: 'start' },
+      position_x: 100,
+      position_y: 100,
+    });
+
+    const [updated] = await trx(TABLE)
+      .where({ id: chatbot.id })
+      .update({ active_flow_id: flow.id, updated_at: trx.fn.now() })
+      .returning('*');
+
+    return updated;
+  });
 };
 
 exports.update = async (organizationId, id, patch) => {

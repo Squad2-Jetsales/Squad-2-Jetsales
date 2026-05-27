@@ -222,9 +222,25 @@ class FlowService {
     });
   }
 
+  // Publica = status 'published' + promove o flow como activeFlowId do
+  // chatbot dono. Sem o segundo passo, a UI publicava mas o bot continuava
+  // apontando para outro draft (ou nulo, no caso de bot recém-criado).
   async publishFlow(flowId) {
-    await this.getFlow(flowId);
-    return await FlowModel.publish(flowId);
+    const flow = await this.getFlow(flowId);
+    return db.transaction(async (trx) => {
+      const [published] = await trx('flows')
+        .where({ id: flowId })
+        .update({ status: 'published', updated_at: trx.fn.now() })
+        .returning('*');
+
+      if (flow.chatbot_id) {
+        await trx('chatbots')
+          .where({ id: flow.chatbot_id })
+          .update({ active_flow_id: flowId, updated_at: trx.fn.now() });
+      }
+
+      return published;
+    });
   }
 
   async deleteFlow(flowId) {
@@ -389,6 +405,58 @@ class FlowService {
 
 
 
+
+  // Boundary entre o webhook do WhatsApp e o FlowEngine. Recebe ponteiros
+  // do banco (UUID do node atual, jsonb do contexto) e devolve respostas
+  // prontas pra Evolution.sendText. Engine internamente usa `data.label`
+  // como id, então traduzimos nos dois sentidos aqui.
+  async runChatbotMessage({ chatbotId, currentNodeId, flowContext, userInput }) {
+    const chatbot = await db('chatbots').where({ id: chatbotId }).first();
+    if (!chatbot?.active_flow_id) return null;
+
+    const flow = await this.getFlowWithGraph(chatbot.active_flow_id);
+    if (!flow?.states?.length) return null;
+
+    const engineFlow = this._toEngineFormat(flow);
+
+    const labelToUuid = {};
+    const uuidToLabel = {};
+    for (const n of flow.states) {
+      const label = n.data?.label;
+      if (label) {
+        labelToUuid[label] = n.id;
+        uuidToLabel[n.id] = label;
+      }
+    }
+
+    let startEngineId;
+    if (currentNodeId && uuidToLabel[currentNodeId]) {
+      startEngineId = uuidToLabel[currentNodeId];
+    } else {
+      const trigger = engineFlow.states.find((s) => s.type === 'trigger') || engineFlow.states[0];
+      startEngineId = trigger?.id;
+    }
+    if (!startEngineId) return null;
+
+    const engine = new FlowEngine(engineFlow);
+    const result = await engine.run({
+      currentNodeId: startEngineId,
+      data: userInput ?? null,
+      context: { ...(flowContext || {}) },
+    });
+
+    const nextEngineId = result.nextNodeId;
+    const nextNodeUuid = labelToUuid[nextEngineId]
+      || (uuidToLabel[nextEngineId] ? nextEngineId : null);
+
+    return {
+      responses: (result.responses || [])
+        .filter((r) => r.message && String(r.message).trim().length > 0),
+      nextNodeUuid,
+      context: result.context || {},
+      isComplete: this._isFlowComplete(engineFlow, nextEngineId),
+    };
+  }
 
   _isFlowComplete(flow, nodeId) {
     const node = flow.states.find((s) => s.id === nodeId);
