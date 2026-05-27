@@ -91,8 +91,12 @@ class FlowEngine {
             case 'input':
                 if (node.variable) this.context[node.variable] = input;
                 break;
-            case 'message': break;
-            case 'choice':  break;
+            case 'message':
+            case 'choice':
+            case 'trigger':
+            case 'condition':
+            case 'wait': // delay real entra na Onda 3 (B-06)
+                break;
             case 'api':
                 if (node.url && node.saveAs) {
                     const res  = await fetch(node.url);

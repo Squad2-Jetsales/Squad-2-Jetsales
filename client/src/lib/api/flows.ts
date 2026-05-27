@@ -68,23 +68,6 @@ type FlowSessionResponse = {
   isComplete?: boolean;
 };
 
-export interface CreateFlowNodeInput {
-  flowId: string;
-  type: FlowNodeType;
-  data: FlowNode["data"];
-  positionX: number;
-  positionY: number;
-}
-
-export interface CreateFlowEdgeInput {
-  flowId: string;
-  sourceNodeId: string;
-  targetNodeId: string;
-  sourceHandle?: string | null;
-  conditionType?: string;
-  conditionValue?: string;
-}
-
 function unwrap<T>(payload: T | BackendEnvelope<T>): T {
   if (payload && typeof payload === "object" && "data" in (payload as Record<string, unknown>)) {
     return (payload as BackendEnvelope<T>).data as T;
@@ -211,12 +194,6 @@ export const flowsApi = {
     });
     return { ok: true };
   },
-
-  createNode: (input: CreateFlowNodeInput) => api.post<FlowNode>("/flow-nodes", input),
-  updateNode: (id: string, input: Partial<FlowNode>) => api.patch<FlowNode>(`/flow-nodes/${id}`, input),
-  deleteNode: (id: string) => api.delete<void>(`/flow-nodes/${id}`),
-  createEdge: (input: CreateFlowEdgeInput) => api.post<FlowEdge>("/flow-edges", input),
-  deleteEdge: (id: string) => api.delete<void>(`/flow-edges/${id}`),
 
   async startSession(flowId: string, userId = "preview-user"): Promise<FlowSessionResponse> {
     const payload = await api.post<FlowSessionResponse | BackendEnvelope<FlowSessionResponse>>(

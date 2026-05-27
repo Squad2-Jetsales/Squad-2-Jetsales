@@ -63,8 +63,6 @@ router.use(authRequired);
 
 router.use('/chatbots', loadOrStub('../modules/chatbot/chatbot.routes', 'chatbots'));
 router.use('/flows', loadOrStub('../modules/flow/flow.routes', 'flows'));
-router.use('/flow-nodes', loadOrStub('../modules/flow/node.routes', 'flow-nodes'));
-router.use('/flow-edges', loadOrStub('../modules/flow/edge.routes', 'flow-edges'));
 router.use(
   '/whatsapp-connections',
   loadOrStub('../modules/whatsapp/whatsapp.routes', 'whatsapp-connections')
