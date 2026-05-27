@@ -57,6 +57,10 @@ import type { FlowEdge, FlowNode, FlowNodeData, FlowNodeType, FlowWithGraph } fr
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
+// Feature flag dos botões de IA — endpoints aiGenerate/aiAdjust no back ainda
+// retornam 501 (decisão de Fase 2 — implementação real fica para a Fase 3).
+const AI_ENABLED = import.meta.env.VITE_ENABLE_AI === "true";
+
 /* ------------------------------- Custom Nodes ------------------------------ */
 
 interface RFNodeData extends Record<string, unknown> {
@@ -546,14 +550,16 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
         <Button variant="ghost" size="icon" onClick={redo} disabled={future.length === 0} aria-label="Refazer">
           <Redo2 className="h-4 w-4" />
         </Button>
-        <Button
-          variant="outline"
-          onClick={() => setAdjustOpen(true)}
-          className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
-        >
-          <Sparkles className="h-4 w-4" />
-          Ajustar com IA
-        </Button>
+        {AI_ENABLED && (
+          <Button
+            variant="outline"
+            onClick={() => setAdjustOpen(true)}
+            className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
+          >
+            <Sparkles className="h-4 w-4" />
+            Ajustar com IA
+          </Button>
+        )}
         <Button variant="ghost" onClick={() => setTesterOpen(true)}>
           <Play className="h-4 w-4" />
           Testar Bot
@@ -659,17 +665,19 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
         )}
       </div>
 
-      <AdjustWithAIDialog
-        open={adjustOpen}
-        onOpenChange={setAdjustOpen}
-        chatbotId={chatbotId}
-        currentNodes={present.nodes.map((n) => ({ domainType: (n.data as RFNodeData).domainType }))}
-        onApply={({ nodes, edges }) => {
-          const rfNodes = nodes.map(toRFNode);
-          const rfEdges = edges.map(toRFEdge);
-          pushHistory({ nodes: rfNodes, edges: rfEdges });
-        }}
-      />
+      {AI_ENABLED && (
+        <AdjustWithAIDialog
+          open={adjustOpen}
+          onOpenChange={setAdjustOpen}
+          chatbotId={chatbotId}
+          currentNodes={present.nodes.map((n) => ({ domainType: (n.data as RFNodeData).domainType }))}
+          onApply={({ nodes, edges }) => {
+            const rfNodes = nodes.map(toRFNode);
+            const rfEdges = edges.map(toRFEdge);
+            pushHistory({ nodes: rfNodes, edges: rfEdges });
+          }}
+        />
+      )}
       <FlowTesterDialog
         flowId={flow.id}
         open={testerOpen}
