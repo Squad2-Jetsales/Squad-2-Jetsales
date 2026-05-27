@@ -15,6 +15,7 @@
 // Todas as queries são tenant-scoped por organization_id. O model expõe um
 // CRUD agnóstico (sem org); o filtro acontece aqui.
 
+const crypto = require('crypto');
 const Chatbot = require('./chatbot.model');
 const db = require('../../database');
 
@@ -88,20 +89,90 @@ exports.remove = async (organizationId, id) => {
   return n > 0;
 };
 
+// Duplica o chatbot E todo o seu flow ativo (nodes + edges com IDs remapeados).
+// Sem o clone do flow a cópia caía em "sem fluxo ativo" no editor — mesma classe
+// de bug do B-03. Tudo em transação: se algum passo falha, nada é gravado.
 exports.duplicate = async (organizationId, userId, id) => {
-  const original = await exports.findById(organizationId, id);
-  if (!original) return null;
-  const [row] = await db(TABLE)
-    .insert({
-      organization_id: organizationId,
-      created_by:      userId || null,
-      name:            `${original.name} (cópia)`,
-      description:     original.description,
-      type:            original.type,
-      ai_config:       original.ai_config,
-    })
-    .returning('*');
-  return row;
+  return db.transaction(async (trx) => {
+    const original = await trx(TABLE)
+      .where({ organization_id: organizationId, id })
+      .first();
+    if (!original) return null;
+
+    const [chatbot] = await trx(TABLE)
+      .insert({
+        organization_id: organizationId,
+        created_by:      userId || null,
+        name:            `${original.name} (cópia)`,
+        description:     original.description,
+        type:            original.type,
+        ai_config:       original.ai_config,
+      })
+      .returning('*');
+
+    // Sem flow ativo nada para clonar — devolve só o chatbot (raro: bots
+    // legados pré-B-03). Bots criados depois do B-03 sempre têm flow.
+    if (!original.active_flow_id) return chatbot;
+
+    const originalFlow = await trx('flows')
+      .where({ id: original.active_flow_id })
+      .first();
+    if (!originalFlow) return chatbot;
+
+    // Cópia vira draft com version=1, independente do status original.
+    // Operador pode publicar quando quiser sem afetar o bot original.
+    const [newFlow] = await trx('flows')
+      .insert({
+        chatbot_id: chatbot.id,
+        name:       originalFlow.name,
+        status:     'draft',
+        version:    1,
+      })
+      .returning('*');
+
+    const originalNodes = await trx('flow_nodes')
+      .where({ flow_id: originalFlow.id })
+      .orderBy('created_at', 'asc');
+
+    if (originalNodes.length > 0) {
+      // Gera UUIDs novos pré-insert para conseguir mapear edges sem
+      // precisar de RETURNING + segundo round-trip.
+      const idMap = {};
+      const nodePayloads = originalNodes.map((n) => {
+        const newId = crypto.randomUUID();
+        idMap[n.id] = newId;
+        return {
+          id:         newId,
+          flow_id:    newFlow.id,
+          type:       n.type,
+          data:       n.data,
+          position_x: n.position_x,
+          position_y: n.position_y,
+        };
+      });
+      await trx('flow_nodes').insert(nodePayloads);
+
+      const originalEdges = await trx('flow_edges').where({ flow_id: originalFlow.id });
+      if (originalEdges.length > 0) {
+        const edgePayloads = originalEdges.map((e) => ({
+          flow_id:         newFlow.id,
+          source_node_id:  idMap[e.source_node_id],
+          target_node_id:  idMap[e.target_node_id],
+          source_handle:   e.source_handle,
+          condition_type:  e.condition_type,
+          condition_value: e.condition_value,
+        }));
+        await trx('flow_edges').insert(edgePayloads);
+      }
+    }
+
+    const [updated] = await trx(TABLE)
+      .where({ id: chatbot.id })
+      .update({ active_flow_id: newFlow.id, updated_at: trx.fn.now() })
+      .returning('*');
+
+    return updated;
+  });
 };
 
 exports.activate = async (organizationId, id) => {
