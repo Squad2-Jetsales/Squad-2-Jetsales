@@ -57,6 +57,10 @@ import type { FlowEdge, FlowNode, FlowNodeData, FlowNodeType, FlowWithGraph } fr
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
+// Feature flag dos botões de IA — endpoints aiGenerate/aiAdjust no back ainda
+// retornam 501 (decisão de Fase 2 — implementação real fica para a Fase 3).
+const AI_ENABLED = import.meta.env.VITE_ENABLE_AI === "true";
+
 /* ------------------------------- Custom Nodes ------------------------------ */
 
 interface RFNodeData extends Record<string, unknown> {
@@ -232,6 +236,10 @@ const BLOCK_PALETTE: Array<{
   // um node tipo "trigger". Só pode existir um por fluxo (lock no onDrop).
   { type: "trigger", label: "Início", icon: Zap, color: "hsl(var(--node-trigger))", defaults: {} },
   { type: "message", label: "Enviar Mensagem", icon: MessageSquare, color: "hsl(var(--node-message))", defaults: { text: "Olá!" } },
+  // Capture estava no NODE_TYPES, no NodeEditor e no engine, mas faltava o
+  // card no toolbox — sem ele Condition não recebia variável e caía sempre
+  // no branch false (B-15).
+  { type: "capture", label: "Capturar Resposta", icon: MessageSquare, color: "hsl(var(--node-message))", defaults: { text: "Qual seu nome?", variable: "input" } },
   { type: "menu", label: "Menu de Opções", icon: ListOrdered, color: "hsl(var(--node-menu))", defaults: { options: [{ id: crypto.randomUUID(), label: "Opção 1", value: "1" }] } },
   { type: "condition", label: "Condição", icon: GitBranch, color: "hsl(var(--node-condition))", defaults: { condition: { field: "input", operator: "==", value: "" } } },
   { type: "wait", label: "Aguardar", icon: Clock, color: "hsl(var(--node-wait))", defaults: { waitMs: 1000 } },
@@ -542,14 +550,16 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
         <Button variant="ghost" size="icon" onClick={redo} disabled={future.length === 0} aria-label="Refazer">
           <Redo2 className="h-4 w-4" />
         </Button>
-        <Button
-          variant="outline"
-          onClick={() => setAdjustOpen(true)}
-          className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
-        >
-          <Sparkles className="h-4 w-4" />
-          Ajustar com IA
-        </Button>
+        {AI_ENABLED && (
+          <Button
+            variant="outline"
+            onClick={() => setAdjustOpen(true)}
+            className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
+          >
+            <Sparkles className="h-4 w-4" />
+            Ajustar com IA
+          </Button>
+        )}
         <Button variant="ghost" onClick={() => setTesterOpen(true)}>
           <Play className="h-4 w-4" />
           Testar Bot
@@ -655,17 +665,19 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
         )}
       </div>
 
-      <AdjustWithAIDialog
-        open={adjustOpen}
-        onOpenChange={setAdjustOpen}
-        chatbotId={chatbotId}
-        currentNodes={present.nodes.map((n) => ({ domainType: (n.data as RFNodeData).domainType }))}
-        onApply={({ nodes, edges }) => {
-          const rfNodes = nodes.map(toRFNode);
-          const rfEdges = edges.map(toRFEdge);
-          pushHistory({ nodes: rfNodes, edges: rfEdges });
-        }}
-      />
+      {AI_ENABLED && (
+        <AdjustWithAIDialog
+          open={adjustOpen}
+          onOpenChange={setAdjustOpen}
+          chatbotId={chatbotId}
+          currentNodes={present.nodes.map((n) => ({ domainType: (n.data as RFNodeData).domainType }))}
+          onApply={({ nodes, edges }) => {
+            const rfNodes = nodes.map(toRFNode);
+            const rfEdges = edges.map(toRFEdge);
+            pushHistory({ nodes: rfNodes, edges: rfEdges });
+          }}
+        />
+      )}
       <FlowTesterDialog
         flowId={flow.id}
         open={testerOpen}

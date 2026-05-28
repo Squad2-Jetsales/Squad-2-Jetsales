@@ -1,5 +1,7 @@
 const db = require('../../database');
 const Model = require('../whatsapp/whatsapp.model');
+const Evolution = require('../evolution/evolution.client');
+const flowService = require('../flow/flow.service');
 
 function readWebhookSecret() {
   return (
@@ -107,7 +109,10 @@ async function upsertMessageForConnection(connection, eventName, item, payload) 
   const content = normalizeContent(item?.message) || '[mensagem sem texto]';
   const externalMessageId = item?.key?.id || null;
 
-  await db.transaction(async (trx) => {
+  // Transação 1: persiste a mensagem inbound/outbound recebida da Evolution.
+  // Retorna conversation+contact pra usar fora — engine + sendText acontecem
+  // após o commit pra não segurar locks durante IO externo.
+  const persisted = await db.transaction(async (trx) => {
     let contact = await trx('contacts')
       .where({ organization_id: connection.organization_id, phone })
       .first();
@@ -148,14 +153,15 @@ async function upsertMessageForConnection(connection, eventName, item, payload) 
         .returning('*');
     } else {
       const nextUnread = fromMe ? conversation.unread_count : Number(conversation.unread_count || 0) + 1;
-      await trx('conversations')
+      [conversation] = await trx('conversations')
         .where({ id: conversation.id })
         .update({
           unread_count: nextUnread,
           last_message_preview: content.slice(0, 400),
           last_message_at: new Date(),
           updated_at: trx.fn.now(),
-        });
+        })
+        .returning('*');
     }
 
     if (externalMessageId) {
@@ -164,7 +170,7 @@ async function upsertMessageForConnection(connection, eventName, item, payload) 
         .whereRaw("metadata->'evolution'->>'messageId' = ?", [externalMessageId])
         .first();
 
-      if (existing) return;
+      if (existing) return { conversation, contact, deduped: true };
     }
 
     await trx('messages').insert({
@@ -183,9 +189,100 @@ async function upsertMessageForConnection(connection, eventName, item, payload) 
         },
       },
     });
+
+    return { conversation, contact, deduped: false };
   });
 
+  if (!persisted.deduped && !fromMe && connection.chatbot_id) {
+    await processBotResponse({ connection, conversation: persisted.conversation, userInput: content });
+  }
+
   return true;
+}
+
+// Avança o fluxo do chatbot ativo para a conversa, envia respostas pela
+// Evolution e persiste cada uma como messages.out. Falhas no envio quebram
+// o loop pra não deixar metade das respostas no banco — operador
+// reenvia/reset manual nesse caso.
+async function processBotResponse({ connection, conversation, userInput }) {
+  if (!Evolution.isConfigured()) {
+    console.warn('[bot-runner] Evolution API nao configurada — fluxo nao sera executado');
+    return;
+  }
+
+  let result;
+  try {
+    result = await flowService.runChatbotMessage({
+      chatbotId: connection.chatbot_id,
+      currentNodeId: conversation.current_node_id,
+      flowContext: conversation.flow_context,
+      userInput,
+    });
+  } catch (err) {
+    console.error('[bot-runner] erro ao executar fluxo:', err.message);
+    return;
+  }
+
+  if (!result) return;
+
+  // Atualiza ponteiro/contexto ANTES de enviar — se o sendText falhar, na
+  // próxima mensagem o engine continua de onde parou em vez de re-executar
+  // tudo (que duplicaria respostas).
+  await db('conversations')
+    .where({ id: conversation.id })
+    .update({
+      current_node_id: result.nextNodeUuid || null,
+      flow_context: result.context || {},
+      updated_at: db.fn.now(),
+    });
+
+  if (result.isComplete) {
+    await db('conversations')
+      .where({ id: conversation.id })
+      .update({ current_node_id: null, status: 'resolved', closed_at: new Date() });
+  }
+
+  const contact = await db('contacts').where({ id: conversation.contact_id }).first();
+  if (!contact?.phone) return;
+  const number = normalizePhone(contact.phone);
+  if (!number) return;
+
+  for (const response of result.responses) {
+    const text = String(response.message).trim();
+    if (!text) continue;
+
+    try {
+      const sent = await Evolution.sendText(connection.evolution_instance, number, text);
+      const externalId = sent?.key?.id || sent?.messageId || null;
+
+      await db('messages').insert({
+        conversation_id: conversation.id,
+        direction: 'out',
+        content: text,
+        metadata: {
+          evolution: {
+            instanceName: connection.evolution_instance,
+            messageId: externalId,
+            status: sent?.status || null,
+            remoteJid: `${number}@s.whatsapp.net`,
+            fromMe: true,
+            generatedBy: 'bot',
+          },
+        },
+      });
+
+      await db('conversations')
+        .where({ id: conversation.id })
+        .update({
+          last_message_preview: text.slice(0, 400),
+          last_message_at: new Date(),
+          updated_at: db.fn.now(),
+        });
+    } catch (err) {
+      console.error(`[bot-runner] falha ao enviar resposta via Evolution: ${err.message}`);
+      break;
+    }
+  }
 }
 
 async function handleMessagesUpsert(connection, eventName, payload) {
