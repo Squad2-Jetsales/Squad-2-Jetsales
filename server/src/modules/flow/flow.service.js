@@ -1,8 +1,22 @@
 const db = require('../../database');
 const { FlowEngine } = require('./flow.engine');
 const FlowModel = require('./flow.model');
+const { httpError } = require('../../middlewares/error.middleware');
 
+// Map global: sessionId → session. Cada session carrega organizationId
+// para evitar que org A leia/escreva sessão criada por org B (B-14).
 const flowSessions = new Map();
+
+// 404 igual a "não existe" também quando a sessão pertence a outra org —
+// evita enumeração entre tenants. Caller passa sempre o organizationId do
+// req.auth, nunca do payload.
+function getOwnedSession(organizationId, sessionId) {
+  const session = flowSessions.get(sessionId);
+  if (!session || session.organizationId !== organizationId) {
+    throw httpError(404, 'Sessão não encontrada', 'NOT_FOUND');
+  }
+  return session;
+}
 
 const NODE_TYPE_TO_DB = {
   message:     'message',
@@ -250,8 +264,13 @@ class FlowService {
   }
 
   // ── Sessões ──────────────────────────────────
+  //
+  // Todos os métodos abaixo recebem organizationId como primeiro parâmetro.
+  // O controller passa req.auth.organizationId (nunca do payload do user).
+  // Sessão criada por org A é invisível para org B: getOwnedSession lança
+  // 404 quando o organizationId não bate (B-14, B-11 sessões).
 
-  async startFlowSession(flowId, userId) {
+  async startFlowSession(organizationId, flowId, userId) {
     const flow        = await this.getFlowWithGraph(flowId);
     const engineFlow  = this._toEngineFormat(flow);
     const startNodeId = engineFlow.states[0]?.id;
@@ -266,21 +285,21 @@ class FlowService {
     });
 
     const session = {
-      id:            sessionId,
+      id:             sessionId,
+      organizationId,
       flowId,
       userId,
-      currentNodeId: result.nextNodeId,
-      context:       result.context,
-      startedAt:     new Date(),
-      messages:      result.responses || [],
+      currentNodeId:  result.nextNodeId,
+      context:        result.context,
+      startedAt:      new Date(),
+      messages:       result.responses || [],
     };
     flowSessions.set(sessionId, session);
     return { sessionId, responses: result.responses, context: result.context };
   }
 
-  async processFlowInput(sessionId, userInput) {
-    const session = flowSessions.get(sessionId);
-    if (!session) throw new Error(`Sessão com ID ${sessionId} não encontrada`);
+  async processFlowInput(organizationId, sessionId, userInput) {
+    const session = getOwnedSession(organizationId, sessionId);
 
     const flow       = await this.getFlowWithGraph(session.flowId);
     const engineFlow = this._toEngineFormat(flow);
@@ -306,21 +325,19 @@ class FlowService {
     };
   }
 
-  async getFlowSession(sessionId) {
-    const session = flowSessions.get(sessionId);
-    if (!session) throw new Error(`Sessão com ID ${sessionId} não encontrada`);
-    return session;
+  async getFlowSession(organizationId, sessionId) {
+    return getOwnedSession(organizationId, sessionId);
   }
 
-  async endFlowSession(sessionId) {
-    const session  = await this.getFlowSession(sessionId);
+  async endFlowSession(organizationId, sessionId) {
+    const session = getOwnedSession(organizationId, sessionId);
     session.endedAt = new Date();
     flowSessions.set(sessionId, session);
     return session;
   }
 
-  async getSessionStats(sessionId) {
-    const session = await this.getFlowSession(sessionId);
+  async getSessionStats(organizationId, sessionId) {
+    const session = getOwnedSession(organizationId, sessionId);
     return {
       sessionId,
       flowId:        session.flowId,

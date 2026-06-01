@@ -164,7 +164,11 @@ class FlowController {
       const { userId } = req.body;
       if (!userId) return res.status(400).json({ error: 'ID do usuário é obrigatório' });
 
-      const session = await flowService.startFlowSession(req.params.flowId, userId);
+      const session = await flowService.startFlowSession(
+        req.auth.organizationId,
+        req.params.flowId,
+        userId,
+      );
       res.status(201).json({ success: true, data: session });
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message, code: error.code });
@@ -172,46 +176,63 @@ class FlowController {
   }
 
   // POST /api/flows/sessions/:sessionId/input
+  // Sem assertFlowOwned aqui: o guard da sessão é feito dentro do service via
+  // getOwnedSession (compara session.organizationId). Sessão de outra org
+  // resulta em 404 — mesma resposta de sessionId inexistente, sem vazar
+  // existência cross-tenant (B-14, B-11 sessões).
   async processInput(req, res) {
     try {
       const { input } = req.body;
       if (input === undefined || input === null) {
         return res.status(400).json({ error: 'Input do usuário é obrigatório' });
       }
-      const result = await flowService.processFlowInput(req.params.sessionId, input);
+      const result = await flowService.processFlowInput(
+        req.auth.organizationId,
+        req.params.sessionId,
+        input,
+      );
       res.json({ success: true, data: result });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(error.status || 500).json({ error: error.message, code: error.code });
     }
   }
 
   // GET /api/flows/sessions/:sessionId
   async getSession(req, res) {
     try {
-      const session = await flowService.getFlowSession(req.params.sessionId);
+      const session = await flowService.getFlowSession(
+        req.auth.organizationId,
+        req.params.sessionId,
+      );
       res.json({ success: true, data: session });
     } catch (error) {
-      res.status(404).json({ error: error.message });
+      res.status(error.status || 404).json({ error: error.message, code: error.code });
     }
   }
 
   // GET /api/flows/sessions/:sessionId/stats
   async getSessionStats(req, res) {
     try {
-      const stats = await flowService.getSessionStats(req.params.sessionId);
+      const stats = await flowService.getSessionStats(
+        req.auth.organizationId,
+        req.params.sessionId,
+      );
       res.json({ success: true, data: stats });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(error.status || 500).json({ error: error.message, code: error.code });
     }
   }
 
   // POST /api/flows/sessions/:sessionId/end
   async endSession(req, res) {
     try {
-      const session = await flowService.endFlowSession(req.params.sessionId);
+      const session = await flowService.endFlowSession(
+        req.auth.organizationId,
+        req.params.sessionId,
+      );
       res.json({ success: true, data: session });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(error.status || 500).json({ error: error.message, code: error.code });
     }
   }
 }
