@@ -57,7 +57,11 @@ function hashRefresh(token) {
 /* -------------------- Casos de uso -------------------- */
 
 async function login({ email, password }) {
-  const user = await db('users').where({ email }).first();
+  // O índice unique de users é (organization_id, email) — o mesmo email pode
+  // existir em organizações distintas. Sem escopo por organização (login
+  // multi-tenant é evolução futura), ordenamos por created_at pra ser
+  // determinístico em vez de devolver linha arbitrária do Postgres.
+  const user = await db('users').where({ email }).orderBy('created_at', 'asc').first();
   if (!user) throw httpError(401, 'Credenciais inválidas', 'INVALID_CREDENTIALS');
 
   const ok = await bcrypt.compare(password, user.password_hash);

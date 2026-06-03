@@ -3,6 +3,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 
 const errorMiddleware = require('./middlewares/error.middleware');
@@ -13,6 +14,10 @@ const app = express();
 // X-Forwarded-* para que `req.secure` seja true em HTTPS e cookies com
 // `Secure: true` cheguem ao navegador.
 app.set('trust proxy', 1);
+
+// Headers de segurança (X-Content-Type-Options, X-Frame-Options, HSTS, etc.).
+// Defaults do helmet são adequados para uma API JSON.
+app.use(helmet());
 
 /* -------------------------------------------------------------------------- */
 /*  Middlewares globais                                                       */
@@ -70,10 +75,6 @@ try {
 /*  Rotas de domínio (todas montadas em /api/v1 — contrato com o front)       */
 /* -------------------------------------------------------------------------- */
 
-// Rota de setup pública (protegida por header X-Setup-Token) — útil para
-// criar o admin dev em deploys remotos (Render, etc.). Montada antes do
-// agregador para não passar por authRequired.
-app.use('/api/v1/setup', require('./modules/setup/setup.routes'));
 app.use('/api/v1', require('./routes'));
 
 /* -------------------------------------------------------------------------- */
