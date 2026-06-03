@@ -70,10 +70,6 @@ try {
 /*  Rotas de domínio (todas montadas em /api/v1 — contrato com o front)       */
 /* -------------------------------------------------------------------------- */
 
-// Rota de setup pública (protegida por header X-Setup-Token) — útil para
-// criar o admin dev em deploys remotos (Render, etc.). Montada antes do
-// agregador para não passar por authRequired.
-app.use('/api/v1/setup', require('./modules/setup/setup.routes'));
 app.use('/api/v1', require('./routes'));
 
 /* -------------------------------------------------------------------------- */
