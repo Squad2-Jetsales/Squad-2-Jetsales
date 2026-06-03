@@ -23,12 +23,28 @@ function loadOrStub(modulePath, label) {
     }
     return mod;
   } catch (err) {
-    if (err.code === 'MODULE_NOT_FOUND' && err.message.includes(modulePath.split('/').pop())) {
-      console.warn(`⚠️  [${label}] módulo ainda não implementado — usando stub 501`);
-      return makeStub(label, 'NOT_IMPLEMENTED');
+    if (err.code === 'MODULE_NOT_FOUND') {
+      // O Node empilha o require stack na message, então um simples
+      // `message.includes('whatsapp.routes')` false-positiva quando uma
+      // dep npm transitiva está faltando (ex.: `qrcode` ausente
+      // mascarava o whatsapp.routes como "não implementado"). Extraímos o
+      // PRIMEIRO "Cannot find module 'X'" e comparamos com o nosso path.
+      const missing = /Cannot find module '([^']+)'/.exec(err.message)?.[1] || '';
+      const baseName = modulePath.split('/').pop();
+      const isOwnModule =
+        missing === modulePath ||
+        missing.endsWith(`/${baseName}`) ||
+        missing === baseName;
+
+      if (isOwnModule) {
+        console.warn(`⚠️  [${label}] módulo ainda não implementado — usando stub 501`);
+        return makeStub(label, 'NOT_IMPLEMENTED');
+      }
+      console.error(`❌ [${label}] dependência ausente: '${missing}' — rode \`npm install\` no server`);
+      return makeStub(label, 'MODULE_BROKEN', 503);
     }
-    // Bug no módulo (sintaxe, dependência faltando, etc.): degradamos pra stub
-    // pra não derrubar o backend inteiro. Log loud pra equipe não ignorar.
+    // Bug no módulo (sintaxe, etc.): degradamos pra stub pra não derrubar o
+    // backend inteiro. Log loud pra equipe não ignorar.
     console.error(`❌ [${label}] falha ao carregar módulo (${err.code || err.name}): ${err.message} — usando stub 503`);
     return makeStub(label, 'MODULE_BROKEN', 503);
   }
@@ -63,8 +79,6 @@ router.use(authRequired);
 
 router.use('/chatbots', loadOrStub('../modules/chatbot/chatbot.routes', 'chatbots'));
 router.use('/flows', loadOrStub('../modules/flow/flow.routes', 'flows'));
-router.use('/flow-nodes', loadOrStub('../modules/flow/node.routes', 'flow-nodes'));
-router.use('/flow-edges', loadOrStub('../modules/flow/edge.routes', 'flow-edges'));
 router.use(
   '/whatsapp-connections',
   loadOrStub('../modules/whatsapp/whatsapp.routes', 'whatsapp-connections')

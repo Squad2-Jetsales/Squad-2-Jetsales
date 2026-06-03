@@ -1,8 +1,22 @@
 const db = require('../../database');
 const { FlowEngine } = require('./flow.engine');
 const FlowModel = require('./flow.model');
+const { httpError } = require('../../middlewares/error.middleware');
 
+// Map global: sessionId → session. Cada session carrega organizationId
+// para evitar que org A leia/escreva sessão criada por org B (B-14).
 const flowSessions = new Map();
+
+// 404 igual a "não existe" também quando a sessão pertence a outra org —
+// evita enumeração entre tenants. Caller passa sempre o organizationId do
+// req.auth, nunca do payload.
+function getOwnedSession(organizationId, sessionId) {
+  const session = flowSessions.get(sessionId);
+  if (!session || session.organizationId !== organizationId) {
+    throw httpError(404, 'Sessão não encontrada', 'NOT_FOUND');
+  }
+  return session;
+}
 
 const NODE_TYPE_TO_DB = {
   message:     'message',
@@ -222,9 +236,25 @@ class FlowService {
     });
   }
 
+  // Publica = status 'published' + promove o flow como activeFlowId do
+  // chatbot dono. Sem o segundo passo, a UI publicava mas o bot continuava
+  // apontando para outro draft (ou nulo, no caso de bot recém-criado).
   async publishFlow(flowId) {
-    await this.getFlow(flowId);
-    return await FlowModel.publish(flowId);
+    const flow = await this.getFlow(flowId);
+    return db.transaction(async (trx) => {
+      const [published] = await trx('flows')
+        .where({ id: flowId })
+        .update({ status: 'published', updated_at: trx.fn.now() })
+        .returning('*');
+
+      if (flow.chatbot_id) {
+        await trx('chatbots')
+          .where({ id: flow.chatbot_id })
+          .update({ active_flow_id: flowId, updated_at: trx.fn.now() });
+      }
+
+      return published;
+    });
   }
 
   async deleteFlow(flowId) {
@@ -234,8 +264,13 @@ class FlowService {
   }
 
   // ── Sessões ──────────────────────────────────
+  //
+  // Todos os métodos abaixo recebem organizationId como primeiro parâmetro.
+  // O controller passa req.auth.organizationId (nunca do payload do user).
+  // Sessão criada por org A é invisível para org B: getOwnedSession lança
+  // 404 quando o organizationId não bate (B-14, B-11 sessões).
 
-  async startFlowSession(flowId, userId) {
+  async startFlowSession(organizationId, flowId, userId) {
     const flow        = await this.getFlowWithGraph(flowId);
     const engineFlow  = this._toEngineFormat(flow);
     const startNodeId = engineFlow.states[0]?.id;
@@ -250,21 +285,21 @@ class FlowService {
     });
 
     const session = {
-      id:            sessionId,
+      id:             sessionId,
+      organizationId,
       flowId,
       userId,
-      currentNodeId: result.nextNodeId,
-      context:       result.context,
-      startedAt:     new Date(),
-      messages:      result.responses || [],
+      currentNodeId:  result.nextNodeId,
+      context:        result.context,
+      startedAt:      new Date(),
+      messages:       result.responses || [],
     };
     flowSessions.set(sessionId, session);
     return { sessionId, responses: result.responses, context: result.context };
   }
 
-  async processFlowInput(sessionId, userInput) {
-    const session = flowSessions.get(sessionId);
-    if (!session) throw new Error(`Sessão com ID ${sessionId} não encontrada`);
+  async processFlowInput(organizationId, sessionId, userInput) {
+    const session = getOwnedSession(organizationId, sessionId);
 
     const flow       = await this.getFlowWithGraph(session.flowId);
     const engineFlow = this._toEngineFormat(flow);
@@ -290,21 +325,19 @@ class FlowService {
     };
   }
 
-  async getFlowSession(sessionId) {
-    const session = flowSessions.get(sessionId);
-    if (!session) throw new Error(`Sessão com ID ${sessionId} não encontrada`);
-    return session;
+  async getFlowSession(organizationId, sessionId) {
+    return getOwnedSession(organizationId, sessionId);
   }
 
-  async endFlowSession(sessionId) {
-    const session  = await this.getFlowSession(sessionId);
+  async endFlowSession(organizationId, sessionId) {
+    const session = getOwnedSession(organizationId, sessionId);
     session.endedAt = new Date();
     flowSessions.set(sessionId, session);
     return session;
   }
 
-  async getSessionStats(sessionId) {
-    const session = await this.getFlowSession(sessionId);
+  async getSessionStats(organizationId, sessionId) {
+    const session = getOwnedSession(organizationId, sessionId);
     return {
       sessionId,
       flowId:        session.flowId,
@@ -369,7 +402,12 @@ class FlowService {
       const raw = normalizeEdgeCondition(e);
       const condition = buildConditionEvaluator(raw);
 
-      return { from, to, condition };
+      // Preserva sourceHandle para o engine decidir o caminho em Condition
+      // node (handles 'true' / 'false') — sem isso o engine ignora o
+      // desenho do editor (B-05).
+      const sourceHandle = e.source_handle ?? e.sourceHandle ?? null;
+
+      return { from, to, condition, sourceHandle };
     });
 
     return { ...flow, states, edges };
@@ -389,6 +427,58 @@ class FlowService {
 
 
 
+
+  // Boundary entre o webhook do WhatsApp e o FlowEngine. Recebe ponteiros
+  // do banco (UUID do node atual, jsonb do contexto) e devolve respostas
+  // prontas pra Evolution.sendText. Engine internamente usa `data.label`
+  // como id, então traduzimos nos dois sentidos aqui.
+  async runChatbotMessage({ chatbotId, currentNodeId, flowContext, userInput }) {
+    const chatbot = await db('chatbots').where({ id: chatbotId }).first();
+    if (!chatbot?.active_flow_id) return null;
+
+    const flow = await this.getFlowWithGraph(chatbot.active_flow_id);
+    if (!flow?.states?.length) return null;
+
+    const engineFlow = this._toEngineFormat(flow);
+
+    const labelToUuid = {};
+    const uuidToLabel = {};
+    for (const n of flow.states) {
+      const label = n.data?.label;
+      if (label) {
+        labelToUuid[label] = n.id;
+        uuidToLabel[n.id] = label;
+      }
+    }
+
+    let startEngineId;
+    if (currentNodeId && uuidToLabel[currentNodeId]) {
+      startEngineId = uuidToLabel[currentNodeId];
+    } else {
+      const trigger = engineFlow.states.find((s) => s.type === 'trigger') || engineFlow.states[0];
+      startEngineId = trigger?.id;
+    }
+    if (!startEngineId) return null;
+
+    const engine = new FlowEngine(engineFlow);
+    const result = await engine.run({
+      currentNodeId: startEngineId,
+      data: userInput ?? null,
+      context: { ...(flowContext || {}) },
+    });
+
+    const nextEngineId = result.nextNodeId;
+    const nextNodeUuid = labelToUuid[nextEngineId]
+      || (uuidToLabel[nextEngineId] ? nextEngineId : null);
+
+    return {
+      responses: (result.responses || [])
+        .filter((r) => r.message && String(r.message).trim().length > 0),
+      nextNodeUuid,
+      context: result.context || {},
+      isComplete: this._isFlowComplete(engineFlow, nextEngineId),
+    };
+  }
 
   _isFlowComplete(flow, nodeId) {
     const node = flow.states.find((s) => s.id === nodeId);
