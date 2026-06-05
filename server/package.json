@@ -8,9 +8,11 @@
     "migrate": "knex --knexfile knexfile.js migrate:latest",
     "migrate:make": "knex --knexfile knexfile.js migrate:make",
     "migrate:rollback": "knex --knexfile knexfile.js migrate:rollback",
-    "seed": "knex --knexfile knexfile.js seed:run"
+    "seed": "knex --knexfile knexfile.js seed:run",
+    "ai:ping": "node scripts/ping-ai.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -18,6 +20,7 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "knex": "^3.1.0",
+    "openai": "^4.77.0",
     "pg": "^8.13.1",
     "qrcode": "^1.5.4",
     "uuid": "^11.0.5",

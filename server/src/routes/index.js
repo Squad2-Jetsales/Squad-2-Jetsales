@@ -89,5 +89,6 @@ router.use(
 );
 router.use('/tickets', loadOrStub('../modules/ticket/ticket.routes', 'tickets'));
 router.use('/dashboard', loadOrStub('../modules/dashboard/dashboard.routes', 'dashboard'));
+router.use('/ai', loadOrStub('../modules/ai/ai.routes', 'ai'));
 
 module.exports = router;
