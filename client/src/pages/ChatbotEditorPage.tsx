@@ -423,7 +423,7 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
         id: crypto.randomUUID(),
         source: conn.source!,
         target: conn.target!,
-        type: "smoothstep",
+        type: "default",                        //formato da linha
         style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
       };
       pushHistory({ nodes: present.nodes, edges: addEdge(newEdge, present.edges) });
