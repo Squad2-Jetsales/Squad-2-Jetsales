@@ -269,8 +269,8 @@ function toRFEdge(e: FlowEdge): Edge {
       conditionType: e.conditionType ?? null,
       conditionValue: e.conditionValue ?? null,
     },
-    type: "smoothstep",
-    style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
+    type: "default",                                            //formato da linha
+    style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },   //cor da linha e grossura
   };
 }
 
