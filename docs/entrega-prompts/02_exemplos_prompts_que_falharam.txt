@@ -1,0 +1,71 @@
+1.5 Exemplos de prompts que falharam
+
+Durante o desenvolvimento do projeto, a equipe utilizou prompts para acelerar tarefas
+de implementação, correção, auditoria e documentação. Alguns prompts iniciais não
+geraram resultados satisfatórios, exigindo ajustes manuais e validação posterior. Os
+exemplos abaixo representam situações reais/reconstruídas a partir do processo de
+desenvolvimento e da documentação do projeto.
+
+
+Exemplo 1 — Prompt muito amplo para auditoria geral
+
+Prompt inicial:
+"Audite todo o projeto e corrija tudo o que estiver errado no frontend e no backend,
+deixando o sistema funcionando."
+
+Problema encontrado:
+Amplo demais. Não definia critérios de aceite, não exigia evidências, não separava
+frontend, backend e testes, e não deixava claro o que validar. O resultado vinha
+genérico, sem como conferir se uma correção realmente fechava o problema.
+
+Ajuste realizado:
+O prompt foi reescrito de forma estruturada: dividido em fases/ondas; cada bug com ID,
+severidade (P0/P1/P2), sintoma, causa raiz e passos de reprodução; com critério de
+aceite por item, relatório final (Definition of Done) e lista de arquivos alterados,
+separando frontend e backend.
+
+Como a equipe validou:
+Subindo o projeto e conferindo: boot do backend sem erros (sem MODULE_BROKEN /
+NOT_IMPLEMENTED), navegação no frontend, rotas de API, login e revisão do relatório.
+Cada bug só foi marcado como fechado após reproduzir o cenário descrito.
+
+Evidências no projeto:
+Branches fix/auditoria-geral-sem-whatsapp e integration/auditoria-felipe-sem-whatsapp;
+documentos docs/PLANO_FASE2.md (5 ondas com Definition of Done) e docs/BUGS_FASE2.md
+(bugs B-01 a B-15 com critério de aceite).
+
+
+Exemplo 2 — Prompt de integração externa sem controle de ambiente
+
+Prompt inicial:
+"Implemente a integração com o WhatsApp pela Evolution API e já deixe enviando e
+recebendo mensagens."
+
+Problema encontrado:
+Tentava avançar sem garantir antes as variáveis de ambiente, as credenciais, o fallback
+e o tratamento de erro. Sem isso, o código quebrava quando a Evolution API não estava
+configurada e misturava "erro real" com "falta de configuração".
+
+Ajuste realizado:
+O prompt passou a tratar o ambiente primeiro: não commitar nada antes de funcionar e
+nunca versionar .env / API keys; validar as credenciais obrigatórias
+(EVOLUTION_API_BASE_URL e EVOLUTION_API_KEY); testar com webhook fake (curl) antes da
+Evolution real; diferenciar erro real de falta de configuração (503 controlado);
+documentar pendências e manter o sistema funcionando sem a integração ativa.
+
+Como a equipe validou:
+Conferindo status HTTP e comportamento: 503 controlado quando faltavam envs, resposta
+200 do webhook fake, persistência da mensagem quando havia chatbot vinculado, rotas
+protegidas e o restante do sistema funcionando com a API externa desligada.
+
+Evidências no projeto:
+docs/EVOLUTION_API.md (tabela de variáveis de ambiente, 503 controlado e exemplo de
+webhook fake via curl), branch evolutionapi e commit fa8d08e (corrige envio de
+respostas no WhatsApp).
+
+
+Conclusão:
+Em ambos os casos, os prompts foram melhorados para ficarem mais específicos,
+rastreáveis e testáveis: passaram a definir fases, critérios de aceite e formas de
+validação. Assim, os outputs da IA deixaram de ser aceitos automaticamente e passaram a
+ser conferidos pela equipe por meio da execução do sistema.

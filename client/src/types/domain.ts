@@ -40,6 +40,7 @@ export interface ChatbotAIConfig {
 export interface ChatbotMetrics {
   connections: number;
   totalNodes: number;
+  totalEdges?: number;
   messagesProcessed: number;
 }
 

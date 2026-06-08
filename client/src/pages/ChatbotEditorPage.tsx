@@ -51,18 +51,23 @@ import { useCanvasStore } from "@/lib/stores/canvasStore";
 import { flowsApi } from "@/lib/api/flows";
 import { chatbotsApi } from "@/lib/api/chatbots";
 import { ApiError } from "@/lib/api/client";
+import {
+  removeNodesAndConnectedEdges,
+  sanitizeReactFlowEdges,
+  validateFlowGraph,
+  type RFNodeData,
+} from "@/lib/flowGraph";
 import { AdjustWithAIDialog } from "@/components/chatbot/AdjustWithAIDialog";
 import { FlowTesterDialog } from "@/components/chatbot/FlowTesterDialog";
 import type { FlowEdge, FlowNode, FlowNodeData, FlowNodeType, FlowWithGraph } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-/* ------------------------------- Custom Nodes ------------------------------ */
+// Feature flag dos botões de IA — endpoints aiGenerate/aiAdjust no back ainda
+// retornam 501 (decisão de Fase 2 — implementação real fica para a Fase 3).
+const AI_ENABLED = import.meta.env.VITE_ENABLE_AI === "true";
 
-interface RFNodeData extends Record<string, unknown> {
-  domainType: FlowNodeType;
-  data: FlowNodeData;
-}
+/* ------------------------------- Custom Nodes ------------------------------ */
 
 function NodeShell({
   color,
@@ -232,6 +237,10 @@ const BLOCK_PALETTE: Array<{
   // um node tipo "trigger". Só pode existir um por fluxo (lock no onDrop).
   { type: "trigger", label: "Início", icon: Zap, color: "hsl(var(--node-trigger))", defaults: {} },
   { type: "message", label: "Enviar Mensagem", icon: MessageSquare, color: "hsl(var(--node-message))", defaults: { text: "Olá!" } },
+  // Capture estava no NODE_TYPES, no NodeEditor e no engine, mas faltava o
+  // card no toolbox — sem ele Condition não recebia variável e caía sempre
+  // no branch false (B-15).
+  { type: "capture", label: "Capturar Resposta", icon: MessageSquare, color: "hsl(var(--node-message))", defaults: { text: "Qual seu nome?", variable: "input" } },
   { type: "menu", label: "Menu de Opções", icon: ListOrdered, color: "hsl(var(--node-menu))", defaults: { options: [{ id: crypto.randomUUID(), label: "Opção 1", value: "1" }] } },
   { type: "condition", label: "Condição", icon: GitBranch, color: "hsl(var(--node-condition))", defaults: { condition: { field: "input", operator: "==", value: "" } } },
   { type: "wait", label: "Aguardar", icon: Clock, color: "hsl(var(--node-wait))", defaults: { waitMs: 1000 } },
@@ -261,7 +270,7 @@ function toRFEdge(e: FlowEdge): Edge {
       conditionType: e.conditionType ?? null,
       conditionValue: e.conditionValue ?? null,
     },
-    type: "smoothstep",
+    type: "default",
     style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
   };
 }
@@ -289,19 +298,6 @@ function rfToDomainEdge(e: Edge, flowId: string): FlowEdge {
     conditionType: edgeData.conditionType ?? undefined,
     conditionValue: edgeData.conditionValue ?? undefined,
   };
-}
-
-function validateFlow(nodes: Node[], edges: Edge[]): string[] {
-  const errors: string[] = [];
-  const triggers = nodes.filter((n) => (n.data as RFNodeData).domainType === "trigger");
-  if (triggers.length === 0) errors.push("Adicione um nó de Início.");
-  for (const n of nodes) {
-    const dt = (n.data as RFNodeData).domainType;
-    if (dt === "end") continue;
-    const out = edges.filter((e) => e.source === n.id);
-    if (out.length === 0) errors.push(`Bloco "${(n.data as RFNodeData).data.label || dt}" não tem saída.`);
-  }
-  return errors;
 }
 
 /* ------------------------------ Editor ---------------------------------- */
@@ -341,11 +337,18 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
     if (saveTimer.current) clearTimeout(saveTimer.current);
     if (present.nodes.length === 0) return;
     saveTimer.current = setTimeout(() => {
+      const sanitized = sanitizeReactFlowEdges(present.nodes, present.edges);
+      if (sanitized.removedEdges.length > 0) {
+        setPresent({ nodes: present.nodes, edges: sanitized.edges });
+        toast.warning("Removemos conexões inválidas do fluxo. Revise e publique novamente.");
+        return;
+      }
+
       setSaveStatus("saving");
       flowsApi
         .bulkUpdate(flow.id, {
           nodes: present.nodes.map((n) => rfToDomainNode(n, flow.id)),
-          edges: present.edges.map((e) => rfToDomainEdge(e, flow.id)),
+          edges: sanitized.edges.map((e) => rfToDomainEdge(e, flow.id)),
         })
         .then(() => setSaveStatus("saved"))
         .catch(() => setSaveStatus("error"));
@@ -353,7 +356,7 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [present, flow.id]);
+  }, [present, flow.id, setPresent]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -374,25 +377,33 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       const next = applyNodeChanges(changes, present.nodes);
+      const removedNodeIds = changes
+        .filter((change) => change.type === "remove")
+        .map((change) => change.id);
+      const nextGraph = removedNodeIds.length > 0
+        ? removeNodesAndConnectedEdges(next, present.edges, removedNodeIds)
+        : { nodes: next, edges: present.edges };
       const hasStructural = changes.some((c) => c.type === "remove" || c.type === "add");
       const hasMoveEnd = changes.some((c) => c.type === "position" && c.dragging === false);
       if (hasStructural || hasMoveEnd) {
-        pushHistory({ nodes: next, edges: present.edges });
+        pushHistory({ nodes: nextGraph.nodes, edges: nextGraph.edges });
+        if (removedNodeIds.includes(selectedNodeId ?? "")) selectNode(null);
       } else {
-        setPresent({ nodes: next, edges: present.edges });
+        setPresent({ nodes: nextGraph.nodes, edges: nextGraph.edges });
       }
     },
-    [present, pushHistory, setPresent],
+    [present, pushHistory, selectedNodeId, selectNode, setPresent],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       const next = applyEdgeChanges(changes, present.edges);
+      const sanitized = sanitizeReactFlowEdges(present.nodes, next);
       const hasStructural = changes.some((c) => c.type === "remove" || c.type === "add");
       if (hasStructural) {
-        pushHistory({ nodes: present.nodes, edges: next });
+        pushHistory({ nodes: present.nodes, edges: sanitized.edges });
       } else {
-        setPresent({ nodes: present.nodes, edges: next });
+        setPresent({ nodes: present.nodes, edges: sanitized.edges });
       }
     },
     [present, pushHistory, setPresent],
@@ -410,12 +421,16 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
         toast.error("Nó de fim não pode ter saídas");
         return;
       }
+      if (!source || !target || !conn.source || !conn.target) {
+        toast.error("Conexão inválida. Reconecte os blocos.");
+        return;
+      }
       const newEdge: Edge = {
         ...conn,
         id: crypto.randomUUID(),
-        source: conn.source!,
-        target: conn.target!,
-        type: "smoothstep",
+        source: conn.source,
+        target: conn.target,
+        type: "default",
         style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
       };
       pushHistory({ nodes: present.nodes, edges: addEdge(newEdge, present.edges) });
@@ -486,14 +501,28 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
   };
 
   const publish = useMutation({
-    mutationFn: () => flowsApi.publish(flow.id),
+    mutationFn: async () => {
+      const sanitized = sanitizeReactFlowEdges(present.nodes, present.edges);
+      await flowsApi.bulkUpdate(flow.id, {
+        nodes: present.nodes.map((n) => rfToDomainNode(n, flow.id)),
+        edges: sanitized.edges.map((e) => rfToDomainEdge(e, flow.id)),
+      });
+      return flowsApi.publish(flow.id);
+    },
     onMutate: () => {
-      const errs = validateFlow(present.nodes, present.edges);
+      const sanitized = sanitizeReactFlowEdges(present.nodes, present.edges);
+      if (sanitized.removedEdges.length > 0) {
+        setPresent({ nodes: present.nodes, edges: sanitized.edges });
+        toast.warning("Removemos conexões inválidas do fluxo. Revise e publique novamente.");
+        throw new Error("validation");
+      }
+
+      const errs = validateFlowGraph(present.nodes, sanitized.edges);
       if (errs.length > 0) {
         const ids = new Set<string>();
         for (const n of present.nodes) {
           if ((n.data as RFNodeData).domainType !== "end") {
-            const has = present.edges.some((e) => e.source === n.id);
+            const has = sanitized.edges.some((e) => e.source === n.id);
             if (!has) ids.add(n.id);
           }
         }
@@ -524,6 +553,15 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
     [present.nodes, errorNodeIds],
   );
 
+  // Clicar numa conexão a remove (feature da Fase 3 — PR #35).
+  const onEdgeClick = useCallback(
+    (_event: React.MouseEvent, edge: Edge) => {
+      const nextEdges = present.edges.filter((e) => e.id !== edge.id);
+      pushHistory({ nodes: present.nodes, edges: nextEdges });
+    },
+    [present, pushHistory],
+  );
+
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
@@ -542,15 +580,33 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
         <Button variant="ghost" size="icon" onClick={redo} disabled={future.length === 0} aria-label="Refazer">
           <Redo2 className="h-4 w-4" />
         </Button>
+        {AI_ENABLED && (
+          <Button
+            variant="outline"
+            onClick={() => setAdjustOpen(true)}
+            className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
+          >
+            <Sparkles className="h-4 w-4" />
+            Ajustar com IA
+          </Button>
+        )}
         <Button
-          variant="outline"
-          onClick={() => setAdjustOpen(true)}
-          className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
+          variant="ghost"
+          onClick={() => {
+            const sanitized = sanitizeReactFlowEdges(present.nodes, present.edges);
+            if (sanitized.removedEdges.length > 0) {
+              setPresent({ nodes: present.nodes, edges: sanitized.edges });
+              toast.warning("Removemos conexões inválidas do fluxo. Revise e teste novamente.");
+              return;
+            }
+            const errs = validateFlowGraph(present.nodes, sanitized.edges);
+            if (errs.length > 0) {
+              toast.error(errs[0] ?? "Validação falhou");
+              return;
+            }
+            setTesterOpen(true);
+          }}
         >
-          <Sparkles className="h-4 w-4" />
-          Ajustar com IA
-        </Button>
-        <Button variant="ghost" onClick={() => setTesterOpen(true)}>
           <Play className="h-4 w-4" />
           Testar Bot
         </Button>
@@ -617,6 +673,8 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
             edges={present.edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onEdgeClick={onEdgeClick}
+            deleteKeyCode={["Delete", "Backspace"]}
             onConnect={onConnect}
             onSelectionChange={onSelectionChange}
             nodeTypes={NODE_TYPES}
@@ -646,26 +704,28 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
                 toast.error("O nó de Início não pode ser excluído");
                 return;
               }
-              const next = present.nodes.filter((n) => n.id !== selectedNode.id);
-              const nextEdges = present.edges.filter((e) => e.source !== selectedNode.id && e.target !== selectedNode.id);
-              pushHistory({ nodes: next, edges: nextEdges });
+              const nextGraph = removeNodesAndConnectedEdges(present.nodes, present.edges, [selectedNode.id]);
+              pushHistory({ nodes: nextGraph.nodes, edges: nextGraph.edges });
               selectNode(null);
             }} />
           </aside>
         )}
       </div>
 
-      <AdjustWithAIDialog
-        open={adjustOpen}
-        onOpenChange={setAdjustOpen}
-        chatbotId={chatbotId}
-        currentNodes={present.nodes.map((n) => ({ domainType: (n.data as RFNodeData).domainType }))}
-        onApply={({ nodes, edges }) => {
-          const rfNodes = nodes.map(toRFNode);
-          const rfEdges = edges.map(toRFEdge);
-          pushHistory({ nodes: rfNodes, edges: rfEdges });
-        }}
-      />
+      {AI_ENABLED && (
+        <AdjustWithAIDialog
+          open={adjustOpen}
+          onOpenChange={setAdjustOpen}
+          chatbotId={chatbotId}
+          currentNodes={present.nodes.map((n) => ({ domainType: (n.data as RFNodeData).domainType }))}
+          onApply={({ nodes, edges }) => {
+            const rfNodes = nodes.map(toRFNode);
+            const rfEdges = edges.map(toRFEdge);
+            const sanitized = sanitizeReactFlowEdges(rfNodes, rfEdges);
+            pushHistory({ nodes: rfNodes, edges: sanitized.edges });
+          }}
+        />
+      )}
       <FlowTesterDialog
         flowId={flow.id}
         open={testerOpen}
