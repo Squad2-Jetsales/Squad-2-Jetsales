@@ -1,7 +1,9 @@
 
 services:
   postgres:
-    image: postgres:15
+    # Imagem com pgvector pré-instalado (Fase 3 / RAG).
+    # Mesma base do postgres:15 + extensão `vector`.
+    image: pgvector/pgvector:pg15
     container_name: jetsales_postgres
     restart: always
     environment:

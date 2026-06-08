@@ -270,7 +270,7 @@ function toRFEdge(e: FlowEdge): Edge {
       conditionType: e.conditionType ?? null,
       conditionValue: e.conditionValue ?? null,
     },
-    type: "smoothstep",
+    type: "default",
     style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
   };
 }
@@ -430,7 +430,7 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
         id: crypto.randomUUID(),
         source: conn.source,
         target: conn.target,
-        type: "smoothstep",
+        type: "default",
         style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
       };
       pushHistory({ nodes: present.nodes, edges: addEdge(newEdge, present.edges) });
