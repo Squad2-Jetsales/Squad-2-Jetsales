@@ -532,6 +532,18 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
     [present.nodes, errorNodeIds],
   );
 
+  const onEdgeClick = useCallback(
+  (_event: React.MouseEvent, edge: Edge) => {
+    const nextEdges = present.edges.filter((e) => e.id !== edge.id);
+
+    pushHistory({
+      nodes: present.nodes,
+      edges: nextEdges,
+    });
+  },
+  [present, pushHistory]
+);
+
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
@@ -627,6 +639,8 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
             edges={present.edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onEdgeClick={onEdgeClick}
+            deleteKeyCode={["Delete", "Backspace"]}
             onConnect={onConnect}
             onSelectionChange={onSelectionChange}
             nodeTypes={NODE_TYPES}
@@ -664,6 +678,7 @@ function FlowCanvas({ flow, chatbotId }: { flow: FlowWithGraph; chatbotId: strin
           </aside>
         )}
       </div>
+      
 
       {AI_ENABLED && (
         <AdjustWithAIDialog
