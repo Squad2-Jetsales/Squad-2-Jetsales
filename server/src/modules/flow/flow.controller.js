@@ -105,18 +105,8 @@ class FlowController {
       await assertFlowOwned(db, req.params.flowId, req.auth.organizationId);
       const { states, edges } = req.body;
 
-      const validation = flowService.validateFlow({
-        name: 'graph-replace',
-        states: states || [],
-        edges: edges || [],
-      });
-
-      if (!validation.valid) {
-        return res.status(400).json({ error: 'Grafo inválido', details: validation.errors });
-      }
-
       const flow = await flowService.replaceGraph(req.params.flowId, { states, edges });
-      res.json({ success: true, data: flow });
+      return res.json({ success: true, data: flow, warnings: flow.warnings || [] });
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message, code: error.code });
     }
