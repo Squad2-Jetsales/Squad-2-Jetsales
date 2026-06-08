@@ -12,6 +12,9 @@ class FlowEngine {
         let responses  = [];
         let safety     = 0;
         let nextNodeId = currentNodeId;
+        if (!node) {
+            return this.finishMissingNode(currentNodeId, responses);
+        }
 
         // Se chegou num nó de input com data, processa o input e avança
         if (node.type === 'input' && data != null) {
@@ -21,6 +24,9 @@ class FlowEngine {
                 return { responses, context: this.context, nextNodeId };
             }
             node = this.getNode(nextNodeId);
+            if (!node) {
+                return this.finishMissingNode(nextNodeId, responses);
+            }
         }
 
         // Avança pelos nós automáticos (message, set, api, etc.)
@@ -35,6 +41,9 @@ class FlowEngine {
             if (nextNodeId === node.id) break; // sem transição válida
 
             node   = this.getNode(nextNodeId);
+            if (!node) {
+                return this.finishMissingNode(nextNodeId, responses);
+            }
             safety++;
         }
 
@@ -53,12 +62,28 @@ class FlowEngine {
 
     getNode(nodeId) {
         const node = this.states.find(state => state.id === nodeId);
-        if (!node) throw new Error(`Node with id ${nodeId} not found`);
+        if (!node) {
+            console.warn(`[flow-engine] Node with id ${nodeId} not found; ending flow safely`);
+            return null;
+        }
         return node;
+    }
+
+    finishMissingNode(nodeId, responses) {
+        return {
+            responses,
+            context: this.context,
+            nextNodeId: null,
+            isComplete: true,
+            completed: true,
+            reason: 'missing_node',
+            missingNodeId: nodeId || null,
+        };
     }
 
     getNextNodeId(currentNodeId, userInput) {
         const currentNode = this.getNode(currentNodeId);
+        if (!currentNode) return currentNodeId;
         const possibleEdges = this.edges.filter(edge => edge.from === currentNodeId);
 
         // Condition node decide pelo source_handle ('true'/'false') desenhado

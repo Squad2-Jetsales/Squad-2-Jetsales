@@ -2,6 +2,13 @@ const db = require('../../database');
 const { FlowEngine } = require('./flow.engine');
 const FlowModel = require('./flow.model');
 const { httpError } = require('../../middlewares/error.middleware');
+const {
+  getEdgeSource,
+  getEdgeTarget,
+  sanitizeFlowGraph,
+  validateFlowGraph,
+} = require('./flow.graph');
+const { ensureActiveFlowForChatbot } = require('../chatbot/active-flow.helper');
 
 // Map global: sessionId → session. Cada session carrega organizationId
 // para evitar que org A leia/escreva sessão criada por org B (B-14).
@@ -98,9 +105,44 @@ function buildConditionEvaluator(rawCondition) {
   };
 }
 
+function getStateLabel(state) {
+  return state?.label || state?.data?.label || state?.id;
+}
+
+function getStateDataValue(state, key, fallback = null) {
+  return state?.[key] ?? state?.data?.[key] ?? fallback;
+}
+
+function mapInsertedNodeRefs(nodeIdMap, sourceState, insertedNode) {
+  const refs = [
+    sourceState?.id,
+    sourceState?.label,
+    sourceState?.data?.label,
+    insertedNode?.data?.label,
+  ].filter(Boolean);
+
+  for (const ref of refs) {
+    nodeIdMap[ref] = insertedNode.id;
+  }
+}
+
 class FlowService {
 
   async createFlow(flowData) {
+    const validation = validateFlowGraph(
+      {
+        name: flowData.name,
+        states: flowData.states || [],
+        edges: flowData.edges || [],
+      },
+      { requireName: true },
+    );
+    if (!validation.valid) {
+      throw httpError(400, validation.errors[0] || 'Fluxo invalido', 'INVALID_FLOW', {
+        details: validation.errors.join('\n'),
+      });
+    }
+
     return await db.transaction(async (trx) => {
       const [flow] = await trx('flows')
         .insert({
@@ -111,8 +153,8 @@ class FlowService {
         })
         .returning('*');
 
-      const states     = flowData.states || [];
-      const edges      = flowData.edges  || [];
+      const states     = validation.sanitized.states;
+      const edges      = validation.sanitized.edges;
       const nodeIdMap  = {};
       let insertedNodes = [];   // declarado fora do if para ficar no escopo do return
 
@@ -121,32 +163,32 @@ class FlowService {
           flow_id:    flow.id,
           type:       toDbType(s.type),
           data: {
-            label:    s.id,
-            message:  s.message   || null,
-            variable: s.variable  || null,
-            options:  s.options   || null,
-            url:      s.url       || null,
-            saveAs:   s.saveAs    || null,
-            key:      s.key       || null,
-            value:    s.value     || null,
-            condition:s.condition || null,
-            delay:    s.delay     || 0,
+            label:    getStateLabel(s),
+            message:  getStateDataValue(s, 'message', getStateDataValue(s, 'text')) || null,
+            variable: getStateDataValue(s, 'variable') || null,
+            options:  getStateDataValue(s, 'options') || null,
+            url:      getStateDataValue(s, 'url') || null,
+            saveAs:   getStateDataValue(s, 'saveAs') || null,
+            key:      getStateDataValue(s, 'key') || null,
+            value:    getStateDataValue(s, 'value') || null,
+            condition:getStateDataValue(s, 'condition') || null,
+            delay:    getStateDataValue(s, 'delay', 0) || 0,
           },
           position_x: s.position_x ?? 0,
           position_y: s.position_y ?? 0,
         }));
 
         insertedNodes = await trx('flow_nodes').insert(nodePayloads).returning('*');
-        insertedNodes.forEach((n) => {
-          if (n.data?.label) nodeIdMap[n.data.label] = n.id;
+        insertedNodes.forEach((n, index) => {
+          mapInsertedNodeRefs(nodeIdMap, states[index], n);
         });
       }
 
       if (edges.length > 0) {
         const edgePayloads = edges.map((e) => ({
           flow_id:         flow.id,
-          source_node_id:  nodeIdMap[e.from] || e.from,
-          target_node_id:  nodeIdMap[e.to]   || e.to,
+          source_node_id:  nodeIdMap[getEdgeSource(e)] || getEdgeSource(e),
+          target_node_id:  nodeIdMap[getEdgeTarget(e)] || getEdgeTarget(e),
           source_handle:   e.source_handle   || null,
           condition_type:  e.condition?.operator || null,
           condition_value: e.condition?.value != null ? String(e.condition.value) : null,
@@ -183,6 +225,14 @@ class FlowService {
 
   async replaceGraph(flowId, { states = [], edges = [] }) {
     await this.getFlow(flowId);
+    if (!Array.isArray(states) || !Array.isArray(edges)) {
+      throw httpError(400, 'States e edges devem ser arrays.', 'INVALID_FLOW');
+    }
+
+    const sanitized = sanitizeFlowGraph({ states, edges });
+    if (sanitized.states.length === 0) {
+      throw httpError(400, 'Fluxo deve ter pelo menos um estado.', 'INVALID_FLOW');
+    }
 
     return await db.transaction(async (trx) => {
       await trx('flow_edges').where({ flow_id: flowId }).del();
@@ -191,37 +241,37 @@ class FlowService {
       const nodeIdMap   = {};
       let insertedNodes = [];   // declarado fora do if
 
-      if (states.length > 0) {
-        const nodePayloads = states.map((s) => ({
+      if (sanitized.states.length > 0) {
+        const nodePayloads = sanitized.states.map((s) => ({
           flow_id:    flowId,
           type:       toDbType(s.type),
           data: {
-            label:    s.id,
-            message:  s.message   || null,
-            variable: s.variable  || null,
-            options:  s.options   || null,
-            url:      s.url       || null,
-            saveAs:   s.saveAs    || null,
-            key:      s.key       || null,
-            value:    s.value     || null,
-            condition:s.condition || null,
-            delay:    s.delay     || 0,
+            label:    getStateLabel(s),
+            message:  getStateDataValue(s, 'message', getStateDataValue(s, 'text')) || null,
+            variable: getStateDataValue(s, 'variable') || null,
+            options:  getStateDataValue(s, 'options') || null,
+            url:      getStateDataValue(s, 'url') || null,
+            saveAs:   getStateDataValue(s, 'saveAs') || null,
+            key:      getStateDataValue(s, 'key') || null,
+            value:    getStateDataValue(s, 'value') || null,
+            condition:getStateDataValue(s, 'condition') || null,
+            delay:    getStateDataValue(s, 'delay', 0) || 0,
           },
           position_x: s.position_x ?? 0,
           position_y: s.position_y ?? 0,
         }));
 
         insertedNodes = await trx('flow_nodes').insert(nodePayloads).returning('*');
-        insertedNodes.forEach((n) => {
-          if (n.data?.label) nodeIdMap[n.data.label] = n.id;
+        insertedNodes.forEach((n, index) => {
+          mapInsertedNodeRefs(nodeIdMap, sanitized.states[index], n);
         });
       }
 
-      if (edges.length > 0) {
-        const edgePayloads = edges.map((e) => ({
+      if (sanitized.edges.length > 0) {
+        const edgePayloads = sanitized.edges.map((e) => ({
           flow_id:         flowId,
-          source_node_id:  nodeIdMap[e.from] || e.from,
-          target_node_id:  nodeIdMap[e.to]   || e.to,
+          source_node_id:  nodeIdMap[getEdgeSource(e)] || getEdgeSource(e),
+          target_node_id:  nodeIdMap[getEdgeTarget(e)] || getEdgeTarget(e),
           source_handle:   e.source_handle   || null,
           condition_type:  e.condition?.operator || null,
           condition_value: e.condition?.value != null ? String(e.condition.value) : null,
@@ -232,7 +282,7 @@ class FlowService {
       await trx('flows').where({ id: flowId }).update({ updated_at: db.fn.now() });
       const updatedFlow   = await trx('flows').where({ id: flowId }).first();
       const insertedEdges = await trx('flow_edges').where({ flow_id: flowId });
-      return { ...updatedFlow, states: insertedNodes, edges: insertedEdges };
+      return { ...updatedFlow, states: insertedNodes, edges: insertedEdges, warnings: sanitized.warnings };
     });
   }
 
@@ -240,7 +290,26 @@ class FlowService {
   // chatbot dono. Sem o segundo passo, a UI publicava mas o bot continuava
   // apontando para outro draft (ou nulo, no caso de bot recém-criado).
   async publishFlow(flowId) {
-    const flow = await this.getFlow(flowId);
+    const flow = await this.getFlowWithGraph(flowId);
+    const validation = validateFlowGraph(
+      {
+        name: flow.name,
+        states: flow.states || [],
+        edges: flow.edges || [],
+      },
+      {
+        requireName: true,
+        requireTrigger: true,
+        requireOutgoing: true,
+        validateContent: true,
+      },
+    );
+    if (!validation.valid) {
+      throw httpError(400, validation.errors[0] || 'Fluxo invalido para publicacao.', 'INVALID_FLOW', {
+        details: validation.errors.join('\n'),
+      });
+    }
+
     return db.transaction(async (trx) => {
       const [published] = await trx('flows')
         .where({ id: flowId })
@@ -273,7 +342,7 @@ class FlowService {
   async startFlowSession(organizationId, flowId, userId) {
     const flow        = await this.getFlowWithGraph(flowId);
     const engineFlow  = this._toEngineFormat(flow);
-    const startNodeId = engineFlow.states[0]?.id;
+    const startNodeId = (engineFlow.states.find((state) => state.type === 'trigger') || engineFlow.states[0])?.id;
     if (!startNodeId) throw new Error('Fluxo não tem nenhum node');
 
     const sessionId = this._generateId();
@@ -355,22 +424,7 @@ class FlowService {
   // ── Validação ────────────────────────────────
 
   validateFlow(flowData) {
-    const errors = [];
-    if (!flowData.name || flowData.name.trim() === '')
-      errors.push('Nome do fluxo é obrigatório');
-    if (!Array.isArray(flowData.states) || flowData.states.length === 0)
-      errors.push('Fluxo deve ter pelo menos um estado');
-    if (!Array.isArray(flowData.edges))
-      errors.push('Edges deve ser um array');
-
-    const stateIds = (flowData.states || []).map((s) => s.id);
-    for (const edge of flowData.edges || []) {
-      if (!stateIds.includes(edge.from))
-        errors.push(`Edge referencia nó inexistente: ${edge.from}`);
-      if (!stateIds.includes(edge.to))
-        errors.push(`Edge referencia nó inexistente: ${edge.to}`);
-    }
-    return { valid: errors.length === 0, errors };
+    return validateFlowGraph(flowData, { requireName: true });
   }
 
   // ── Helpers privados ─────────────────────────
@@ -391,10 +445,11 @@ class FlowService {
       ...(n.data || {}),
     }));
 
+    const engineStateIds = new Set(states.map((state) => state.id));
     const edges = (flow.edges || []).map((e) => {
       // Resolve source/target: se for UUID, converte para label
-      const fromRaw = e.from || e.source_node_id;
-      const toRaw   = e.to   || e.target_node_id;
+      const fromRaw = getEdgeSource(e);
+      const toRaw   = getEdgeTarget(e);
       const from    = uuidToLabel[fromRaw] || fromRaw;
       const to      = uuidToLabel[toRaw]   || toRaw;
 
@@ -408,6 +463,12 @@ class FlowService {
       const sourceHandle = e.source_handle ?? e.sourceHandle ?? null;
 
       return { from, to, condition, sourceHandle };
+    }).filter((edge) => {
+      const valid = engineStateIds.has(edge.from) && engineStateIds.has(edge.to);
+      if (!valid) {
+        console.warn(`[flow] edge orfa ignorada no engine: ${edge.from} -> ${edge.to}`);
+      }
+      return valid;
     });
 
     return { ...flow, states, edges };
@@ -433,7 +494,9 @@ class FlowService {
   // prontas pra Evolution.sendText. Engine internamente usa `data.label`
   // como id, então traduzimos nos dois sentidos aqui.
   async runChatbotMessage({ chatbotId, currentNodeId, flowContext, userInput }) {
-    const chatbot = await db('chatbots').where({ id: chatbotId }).first();
+    let chatbot = await db('chatbots').where({ id: chatbotId }).first();
+    if (!chatbot) return null;
+    chatbot = await ensureActiveFlowForChatbot(db, chatbot);
     if (!chatbot?.active_flow_id) return null;
 
     const flow = await this.getFlowWithGraph(chatbot.active_flow_id);
