@@ -1,18 +1,9 @@
-// server/src/modules/ai/ai.service.js
-//
-// Camada de orquestração de IA.
-// F3.1: só healthcheck. Próximas fases adicionam: ingest, retrieve, agent.
-
 const { resolveChatProvider, resolveEmbeddingProvider } = require('./providers');
+const { logUsage } = require('./observability/usage.logger');
+const db = require('../../database');
 
-/**
- * Healthcheck dos providers de IA.
- * - Tenta resolver o adapter (valida env vars).
- * - Faz ping (chamada barata) em paralelo.
- * - Retorna shape: { chat: {...}, embedding: {...} }
- */
 async function health() {
-  const result = { chat: null, embedding: null };
+  const result = { chat: null, embedding: null, usageLogs: null };
 
   // Chat
   try {
@@ -26,9 +17,7 @@ async function health() {
   } catch (err) {
     result.chat = {
       provider: process.env.AI_CHAT_PROVIDER || 'anthropic',
-      ok: false,
-      latencyMs: 0,
-      error: err.message,
+      ok: false, latencyMs: 0, error: err.message,
     };
   }
 
@@ -45,10 +34,16 @@ async function health() {
   } catch (err) {
     result.embedding = {
       provider: process.env.AI_EMBEDDING_PROVIDER || 'openai',
-      ok: false,
-      latencyMs: 0,
-      error: err.message,
+      ok: false, latencyMs: 0, error: err.message,
     };
+  }
+
+  // Verifica acesso à tabela ai_usage_logs (prova que a migration rodou)
+  try {
+    const { count } = await db('ai_usage_logs').count('id as count').first();
+    result.usageLogs = { ok: true, totalRows: Number(count) };
+  } catch (err) {
+    result.usageLogs = { ok: false, error: err.message };
   }
 
   return result;
