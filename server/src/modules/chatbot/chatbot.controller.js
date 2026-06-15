@@ -1,31 +1,22 @@
 // server/src/modules/chatbot/chatbot.controller.js
 //
-// Camada fina sobre chatbot.service. authRequired já roda em routes/index.js,
-// então aqui só lemos req.auth.{organizationId,userId}, validamos input e
-// delegamos. aiGenerate/aiAdjust seguem 501 até a próxima fase.
+// Camada fina sobre chatbot.service. authRequired ja roda em routes/index.js,
+// entao aqui so lemos req.auth.{organizationId,userId}, validamos input e
+// delegamos para o service.
 
 const service = require('./chatbot.service');
 
 const VALID_STATUS = ['active', 'inactive'];
-
-function notImplemented(action) {
-  return (req, res) => {
-    res.status(501).json({
-      error: `chatbot.${action} ainda não migrado para knex`,
-      code: 'NOT_IMPLEMENTED',
-    });
-  };
-}
 
 exports.findAll = async (req, res, next) => {
   try {
     const { organizationId } = req.auth;
     const { status, type } = req.query;
     if (status !== undefined && !VALID_STATUS.includes(status)) {
-      return res.status(400).json({ error: 'status inválido', code: 'BAD_REQUEST' });
+      return res.status(400).json({ error: 'status invalido', code: 'BAD_REQUEST' });
     }
     if (type !== undefined && !service.VALID_TYPES.includes(type)) {
-      return res.status(400).json({ error: 'type inválido', code: 'BAD_REQUEST' });
+      return res.status(400).json({ error: 'type invalido', code: 'BAD_REQUEST' });
     }
     const rows = await service.list(organizationId, { status, type });
     res.json(rows);
@@ -37,7 +28,7 @@ exports.findAll = async (req, res, next) => {
 exports.findOne = async (req, res, next) => {
   try {
     const row = await service.findById(req.auth.organizationId, req.params.id);
-    if (!row) return res.status(404).json({ error: 'Chatbot não encontrado', code: 'NOT_FOUND' });
+    if (!row) return res.status(404).json({ error: 'Chatbot nao encontrado', code: 'NOT_FOUND' });
     res.json(row);
   } catch (err) {
     next(err);
@@ -48,10 +39,10 @@ exports.create = async (req, res, next) => {
   try {
     const { name, description, type } = req.body || {};
     if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ error: 'name é obrigatório', code: 'BAD_REQUEST' });
+      return res.status(400).json({ error: 'name e obrigatorio', code: 'BAD_REQUEST' });
     }
     if (!type || !service.VALID_TYPES.includes(type)) {
-      return res.status(400).json({ error: 'type inválido', code: 'BAD_REQUEST' });
+      return res.status(400).json({ error: 'type invalido', code: 'BAD_REQUEST' });
     }
     const row = await service.create(req.auth.organizationId, req.auth.userId, {
       name: name.trim(),
@@ -74,7 +65,7 @@ exports.update = async (req, res, next) => {
       });
     }
     if (patch.type !== undefined && !service.VALID_TYPES.includes(patch.type)) {
-      return res.status(400).json({ error: 'type inválido', code: 'BAD_REQUEST' });
+      return res.status(400).json({ error: 'type invalido', code: 'BAD_REQUEST' });
     }
     const mapped = {};
     if (patch.name !== undefined) mapped.name = patch.name;
@@ -84,7 +75,7 @@ exports.update = async (req, res, next) => {
     if (patch.activeFlowId !== undefined) mapped.active_flow_id = patch.activeFlowId;
 
     const existing = await service.findById(req.auth.organizationId, req.params.id);
-    if (!existing) return res.status(404).json({ error: 'Chatbot não encontrado', code: 'NOT_FOUND' });
+    if (!existing) return res.status(404).json({ error: 'Chatbot nao encontrado', code: 'NOT_FOUND' });
 
     const row = await service.update(req.auth.organizationId, req.params.id, mapped);
     res.json(row);
@@ -96,7 +87,7 @@ exports.update = async (req, res, next) => {
 exports.remove = async (req, res, next) => {
   try {
     const ok = await service.remove(req.auth.organizationId, req.params.id);
-    if (!ok) return res.status(404).json({ error: 'Chatbot não encontrado', code: 'NOT_FOUND' });
+    if (!ok) return res.status(404).json({ error: 'Chatbot nao encontrado', code: 'NOT_FOUND' });
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -106,7 +97,7 @@ exports.remove = async (req, res, next) => {
 exports.duplicate = async (req, res, next) => {
   try {
     const row = await service.duplicate(req.auth.organizationId, req.auth.userId, req.params.id);
-    if (!row) return res.status(404).json({ error: 'Chatbot não encontrado', code: 'NOT_FOUND' });
+    if (!row) return res.status(404).json({ error: 'Chatbot nao encontrado', code: 'NOT_FOUND' });
     res.status(201).json(row);
   } catch (err) {
     next(err);
@@ -116,7 +107,7 @@ exports.duplicate = async (req, res, next) => {
 exports.activate = async (req, res, next) => {
   try {
     const row = await service.activate(req.auth.organizationId, req.params.id);
-    if (!row) return res.status(404).json({ error: 'Chatbot não encontrado', code: 'NOT_FOUND' });
+    if (!row) return res.status(404).json({ error: 'Chatbot nao encontrado', code: 'NOT_FOUND' });
     res.json(row);
   } catch (err) {
     next(err);
@@ -126,12 +117,52 @@ exports.activate = async (req, res, next) => {
 exports.deactivate = async (req, res, next) => {
   try {
     const row = await service.deactivate(req.auth.organizationId, req.params.id);
-    if (!row) return res.status(404).json({ error: 'Chatbot não encontrado', code: 'NOT_FOUND' });
+    if (!row) return res.status(404).json({ error: 'Chatbot nao encontrado', code: 'NOT_FOUND' });
     res.json(row);
   } catch (err) {
     next(err);
   }
 };
 
-exports.aiGenerate = notImplemented('aiGenerate');
-exports.aiAdjust = notImplemented('aiAdjust');
+exports.aiGenerate = async (req, res, next) => {
+  try {
+    const { name, description, prompt } = req.body || {};
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'name e obrigatorio', code: 'BAD_REQUEST' });
+    }
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+      return res.status(400).json({ error: 'prompt e obrigatorio', code: 'BAD_REQUEST' });
+    }
+
+    const result = await service.aiGenerate(req.auth.organizationId, req.auth.userId, {
+      name: name.trim(),
+      description: typeof description === 'string' ? description.trim() : undefined,
+      prompt: prompt.trim(),
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.aiAdjust = async (req, res, next) => {
+  try {
+    const { instruction } = req.body || {};
+    if (!instruction || typeof instruction !== 'string' || !instruction.trim()) {
+      return res.status(400).json({ error: 'instruction e obrigatoria', code: 'BAD_REQUEST' });
+    }
+
+    const result = await service.aiAdjust(req.auth.organizationId, req.params.id, {
+      instruction: instruction.trim(),
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: 'Chatbot nao encontrado', code: 'NOT_FOUND' });
+    }
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};

@@ -29,7 +29,13 @@ const PREVIEW_SESSION: Session = {
   },
 };
 
-export const isPreviewMode = !apiBaseUrl && import.meta.env.DEV;
+const LOCAL_PREVIEW_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+export const isPreviewMode =
+  !apiBaseUrl &&
+  import.meta.env.DEV &&
+  typeof window !== "undefined" &&
+  LOCAL_PREVIEW_HOSTS.has(window.location.hostname);
 
 export function useSession() {
   const query = useQuery<Session, ApiError>({
