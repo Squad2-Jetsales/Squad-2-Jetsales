@@ -8,7 +8,8 @@ const aiService = require('./ai.service');
 async function getHealth(_req, res, next) {
   try {
     const result = await aiService.health();
-    const ok = result.chat?.ok && result.embedding?.ok;
+    // ok = true só se chat, embedding E tabela estiverem funcionando
+    const ok = result.chat?.ok && result.embedding?.ok && result.usageLogs?.ok;
     res.status(ok ? 200 : 503).json({
       ok,
       checkedAt: new Date().toISOString(),

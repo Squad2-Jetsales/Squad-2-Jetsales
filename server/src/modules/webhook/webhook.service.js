@@ -205,26 +205,40 @@ async function upsertMessageForConnection(connection, eventName, item, payload) 
 // o loop pra não deixar metade das respostas no banco — operador
 // reenvia/reset manual nesse caso.
 async function processBotResponse({ connection, conversation, userInput }) {
-  if (!Evolution.isConfigured()) {
-    console.warn('[bot-runner] Evolution API nao configurada — fluxo nao sera executado');
+  const chatbot = await db('chatbots').where({ id: connection.chatbot_id }).first();
+
+  // NOVO: despacha para AgentEngine se tipo = 'ai_agent'
+  if (chatbot?.type === 'ai_agent') {
+    const agentEngine = require('../ai/engine/agent.engine');
+    const contact = await db('contacts').where({ id: conversation.contact_id }).first();
+
+    const result = await agentEngine.run({ chatbot, conversation, contact, userInput });
+
+    if (result.decision === 'fallback_flow' && result.fallbackFlowId) {
+      // Handoff para FlowEngine preservando contexto
+      const { FallbackBridge } = require('../ai/engine/fallback.bridge');
+      return FallbackBridge.handoff(result.fallbackFlowId, conversation, connection);
+    }
+
+    // Envia resposta via Evolution e persiste
+    if (result.reply) {
+      const number = contact.phone.replace(/\D+/g, '');
+      const sent = await Evolution.sendText(connection.evolution_instance, number, result.reply);
+
+      await db('messages').insert({
+        conversation_id: conversation.id,
+        direction: 'out',
+        content: result.reply,
+        metadata: {
+          source: 'ai_agent',
+          traceId: result.traceId,
+          citations: result.citations,
+          evolution: { messageId: sent?.key?.id, fromMe: true },
+        },
+      });
+    }
     return;
   }
-
-  let result;
-  try {
-    result = await flowService.runChatbotMessage({
-      chatbotId: connection.chatbot_id,
-      currentNodeId: conversation.current_node_id,
-      flowContext: conversation.flow_context,
-      userInput,
-    });
-  } catch (err) {
-    console.error('[bot-runner] erro ao executar fluxo:', err.message);
-    return;
-  }
-
-  if (!result) return;
-
   // Atualiza ponteiro/contexto ANTES de enviar — se o sendText falhar, na
   // próxima mensagem o engine continua de onde parou em vez de re-executar
   // tudo (que duplicaria respostas).
