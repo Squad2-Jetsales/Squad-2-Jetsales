@@ -205,6 +205,11 @@ async function upsertMessageForConnection(connection, eventName, item, payload) 
 // o loop pra não deixar metade das respostas no banco — operador
 // reenvia/reset manual nesse caso.
 async function processBotResponse({ connection, conversation, userInput }) {
+  if (!Evolution.isConfigured()) {
+    console.warn('[bot-runner] Evolution API nao configurada - fluxo nao sera executado');
+    return;
+  }
+
   const chatbot = await db('chatbots').where({ id: connection.chatbot_id }).first();
 
   // NOVO: despacha para AgentEngine se tipo = 'ai_agent'
@@ -239,7 +244,23 @@ async function processBotResponse({ connection, conversation, userInput }) {
     }
     return;
   }
-  // Atualiza ponteiro/contexto ANTES de enviar — se o sendText falhar, na
+
+  let result;
+  try {
+    result = await flowService.runChatbotMessage({
+      chatbotId: connection.chatbot_id,
+      currentNodeId: conversation.current_node_id,
+      flowContext: conversation.flow_context,
+      userInput,
+    });
+  } catch (err) {
+    console.error('[bot-runner] erro ao executar fluxo:', err.message);
+    return;
+  }
+
+  if (!result) return;
+
+  // Atualiza ponteiro/contexto ANTES de enviar - se o sendText falhar, na
   // próxima mensagem o engine continua de onde parou em vez de re-executar
   // tudo (que duplicaria respostas).
   await db('conversations')
