@@ -1,8 +1,7 @@
 // server/src/modules/chatbot/chatbot.routes.js
 //
 // Rotas batem 1:1 com o contrato consumido pelo front em
-// client/src/lib/api/chatbots.ts. Os handlers retornam 501 até a Fase 1
-// concluir o refator para knex.
+// client/src/lib/api/chatbots.ts.
 
 const router = require('express').Router();
 const c = require('./chatbot.controller');
