@@ -36,7 +36,7 @@ async function listByOrganization(organizationId, { contactId, chatbotId, status
   const query = db(TABLE)
     .select(COLUMNS)
     .where({ organization_id: organizationId })
-    .orderBy('created_at', 'desc')
+    .orderByRaw('COALESCE(last_message_at, created_at) desc')
     .limit(Math.min(Math.max(Number(limit) || 50, 1), 200))
     .offset(Math.max(Number(offset) || 0, 0));
 
@@ -109,7 +109,7 @@ async function listWithContact(organizationId, { contactId, chatbotId, status, l
     .select(CONTACT_SELECT)
     .leftJoin('contacts', 'contacts.id', `${TABLE}.contact_id`)
     .where(`${TABLE}.organization_id`, organizationId)
-    .orderBy(`${TABLE}.created_at`, 'desc')
+    .orderByRaw(`COALESCE(${TABLE}.last_message_at, ${TABLE}.created_at) desc`)
     .limit(Math.min(Math.max(Number(limit) || 50, 1), 200))
     .offset(Math.max(Number(offset) || 0, 0));
 

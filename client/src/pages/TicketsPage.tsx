@@ -46,6 +46,7 @@ export default function TicketsPage() {
     queryKey: ["conversations", filter],
     queryFn: () => ticketsApi.listConversations(filter === "all" ? "all" : filter),
     staleTime: 15_000,
+    refetchInterval: 5000,
   });
 
   const filtered = useMemo(() => {
