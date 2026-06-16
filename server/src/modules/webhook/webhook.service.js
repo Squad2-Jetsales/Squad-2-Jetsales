@@ -212,35 +212,53 @@ async function processBotResponse({ connection, conversation, userInput }) {
 
   const chatbot = await db('chatbots').where({ id: connection.chatbot_id }).first();
 
-  // NOVO: despacha para AgentEngine se tipo = 'ai_agent'
+  // Despacha para o AgentEngine se o chatbot for do tipo 'ai_agent' (Fase 3).
+  //
+  // ⚠️ Estado atual (auditoria 2026-06-16): o AgentEngine (F3.4) e o
+  // FallbackBridge ainda são scaffolds incompletos — `agent.engine.js` importa
+  // módulos internos que não existem (`context.builder`, `tool.router`,
+  // `trace.logger`) e `fallback.bridge.js` não existe. Sem este guard, um
+  // chatbot marcado como 'ai_agent' faria o `require`/`run` estourar
+  // MODULE_NOT_FOUND e derrubaria o processamento da mensagem inbound desta
+  // conexão. A mensagem recebida JÁ foi persistida antes deste ponto, então
+  // aqui só logamos e seguimos sem resposta automática — nada de inbound é
+  // perdido. Remover o try/catch quando F3.4/F3.5 estiverem completas.
   if (chatbot?.type === 'ai_agent') {
-    const agentEngine = require('../ai/engine/agent.engine');
-    const contact = await db('contacts').where({ id: conversation.contact_id }).first();
+    try {
+      const agentEngine = require('../ai/engine/agent.engine');
+      const contact = await db('contacts').where({ id: conversation.contact_id }).first();
 
-    const result = await agentEngine.run({ chatbot, conversation, contact, userInput });
+      const result = await agentEngine.run({ chatbot, conversation, contact, userInput });
 
-    if (result.decision === 'fallback_flow' && result.fallbackFlowId) {
-      // Handoff para FlowEngine preservando contexto
-      const { FallbackBridge } = require('../ai/engine/fallback.bridge');
-      return FallbackBridge.handoff(result.fallbackFlowId, conversation, connection);
-    }
+      if (result.decision === 'fallback_flow' && result.fallbackFlowId) {
+        // Handoff para FlowEngine preservando contexto
+        const { FallbackBridge } = require('../ai/engine/fallback.bridge');
+        return await FallbackBridge.handoff(result.fallbackFlowId, conversation, connection);
+      }
 
-    // Envia resposta via Evolution e persiste
-    if (result.reply) {
-      const number = contact.phone.replace(/\D+/g, '');
-      const sent = await Evolution.sendText(connection.evolution_instance, number, result.reply);
+      // Envia resposta via Evolution e persiste
+      if (result.reply) {
+        const number = contact.phone.replace(/\D+/g, '');
+        const sent = await Evolution.sendText(connection.evolution_instance, number, result.reply);
 
-      await db('messages').insert({
-        conversation_id: conversation.id,
-        direction: 'out',
-        content: result.reply,
-        metadata: {
-          source: 'ai_agent',
-          traceId: result.traceId,
-          citations: result.citations,
-          evolution: { messageId: sent?.key?.id, fromMe: true },
-        },
-      });
+        await db('messages').insert({
+          conversation_id: conversation.id,
+          direction: 'out',
+          content: result.reply,
+          metadata: {
+            source: 'ai_agent',
+            traceId: result.traceId,
+            citations: result.citations,
+            evolution: { messageId: sent?.key?.id, fromMe: true },
+          },
+        });
+      }
+    } catch (err) {
+      console.error(
+        `[bot-runner] AgentEngine indisponível para chatbot ${connection.chatbot_id} ` +
+        `(tipo ai_agent): ${err.message} — mensagem inbound preservada, ` +
+        'nenhuma resposta automática enviada',
+      );
     }
     return;
   }
