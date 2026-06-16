@@ -281,7 +281,7 @@ interface ChatbotAIConfig {
 > | Fase | Estado | Resumo |
 > |---|---|---|
 > | F3.1 | ✅ Feito e wired | providers + adapters + `usage.logger` + `/ai/health` + migrations `001‑003` |
-> | F3.2 | ❌ ~15% | só migration `002` + `ingestion.queue.js` órfão + `ingestion.worker.js` quebrado |
+> | F3.2 | ✅ Feito e wired | parsers + chunker + storage + worker BullMQ + upload + endpoints KB/documentos + redis no compose (`feat/ai-ingestion-pipeline`) |
 > | F3.3 | ⚠️ ~40% scaffold | `rag/retriever.js` real, mas MMR falso e `ai/rag.service.js` duplicado vazio; não exposto |
 > | F3.4 | ❌ ~20% quebrado | `agent.engine.js` importa 3 módulos inexistentes; não roda |
 > | F3.5 | ⚠️ wired/guardado | webhook despachava p/ engine quebrado; branch `ai_agent` guardada com try/catch em 2026-06-16 |
@@ -305,7 +305,7 @@ interface ChatbotAIConfig {
 
 ### F3.2 — Pipeline de ingestão (sprint 1-2)
 
-> **Estado real (2026-06-16): ❌ ~15% — PRÓXIMO ENTREGÁVEL, redefinido.** Presente: migration `002` (schema de `knowledge_chunks` + `knowledge_ingestion_jobs` + patch em `knowledge_documents`) e `ingestion/ingestion.queue.js` (producer BullMQ, **mas ninguém o importa**). Faltando/quebrado: `ingestion.worker.js` faz `require('./parsers')` e `./chunker` **inexistentes**; sem `parsers/*`, sem `chunker.js`; sem endpoint `POST /knowledge-bases/:id/documents`; sem lib de multipart (multer/busboy); sem serviço `redis` no compose; worker não sobe no boot; `knowledge.service.js` está **vazio (0 bytes)**. **Antes de construir**, executar a "Lista de limpeza" no fim da seção 6.
+> **Estado real (2026-06-16): ✅ ENTREGUE** (`feat/ai-ingestion-pipeline`). Implementado: `parsers/*` (pdf via `pdf-parse` v2, docx via `mammoth`, html via `cheerio`, txt/md), `chunker.js` (recursivo + overlap, `token_count` via `tiktoken` cl100k_base), `storage.js` (disco local + sha256), `ingestion.worker.js` reescrito (parse→chunk→embed em batches de 50→upsert transacional em `knowledge_chunks`, `logUsage` por batch, falha definitiva só na última tentativa), `ingestion.queue.js` wired, entrypoint `npm run worker`, `multer` para upload, `redis:7-alpine` + serviço `worker` no compose. Endpoints `/knowledge-bases` (CRUD) e `/knowledge-documents` montados em `routes/index.js`, em `modules/ai/knowledge/` (guards/mapper/service/controller). A camada vazia `modules/knowledge/` foi removida (consolidação). Verificado: migrate limpo, teste de integração do service (tenancy/dedupe/cascade) 20/20, mounts reais (não-stub). **Pendente de credencial:** o caminho embed→`indexed` exige `OPENAI_API_KEY` (chunker/parsers já unit-testados).
 
 **Entregáveis**
 - BullMQ + Redis no docker-compose (`redis:7-alpine`)
@@ -420,16 +420,16 @@ Antes de construir F3.2 de verdade, reconciliar os scaffolds órfãos/quebrados 
 **Já aplicado (2026-06-16):**
 - [x] `webhook.service.js` — branch `type === 'ai_agent'` envolvida em try/catch para não derrubar o inbound enquanto o AgentEngine está quebrado.
 
+**Feito na F3.2 (`feat/ai-ingestion-pipeline`):**
+- [x] `server/src/modules/knowledge/{knowledge.model.js, document.model.js, knowledge.service.js}` — **decisão: consolidar em `modules/ai/`**. Os 3 arquivos vazios foram deletados; KB/documento agora vivem em `modules/ai/knowledge/`.
+- [x] `server/src/modules/ai/ingestion/ingestion.queue.js` — wired (importado por `knowledge.service` ao criar/reindexar documento; payload passa `documentId` + `jobId`).
+- [x] `server/src/modules/ai/ingestion/ingestion.worker.js` — reescrito robusto (upsert transacional, dedupe no upload por checksum, `parsers/*` + `chunker.js` criados, `logUsage` por batch, falha definitiva só na última tentativa).
+- [x] `/knowledge-bases*` e `/knowledge-documents*` montados em `routes/index.js` (via `loadOrStub`).
+- [x] `docker-compose` ganhou `redis:7-alpine` (+ serviço `worker`).
+
 **A limpar quando a fase dona for retomada:**
 - [ ] `server/src/modules/ai/rag.service.js` — **vazio (0 bytes), duplicata** de `ai/rag/rag.service.js`. Deletar (F3.3).
-- [ ] `server/src/modules/knowledge/{knowledge.model.js, document.model.js, knowledge.service.js}` — **3 arquivos vazios (0 bytes)**. Decidir entre implementar a camada `knowledge` ou consolidar tudo em `modules/ai/` e deletar (F3.2).
-- [ ] `server/src/modules/ai/ingestion/ingestion.queue.js` — producer órfão (ninguém importa). Manter e wirar em F3.2, ou deletar se o desenho mudar.
-- [ ] `server/src/modules/ai/ingestion/ingestion.worker.js` — reescrever robusto em F3.2 (transaction no upsert, dedupe por checksum, criar `parsers/*` e `chunker.js` que ele importa).
 - [ ] `server/src/modules/ai/engine/agent.engine.js` — completar (criar `context.builder`, `tool.router`, `tools/`, `trace.logger`, `fallback.bridge`) em F3.4, ou deletar até lá para não rotacionar dívida quebrada.
-
-**Lacunas de contrato a registrar:**
-- [ ] Nenhum endpoint `/knowledge-bases*` está montado em `routes/index.js` — chamadas do front a esse path retornam **404** (nem stub). Entra em F3.2.
-- [ ] `docker-compose` ainda sem serviço `redis` (necessário para BullMQ em F3.2).
 
 ---
 
