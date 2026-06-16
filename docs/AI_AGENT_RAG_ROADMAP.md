@@ -1,8 +1,10 @@
 # JetGO — Roadmap AI Agent + RAG (Nível 3)
 
 > Blueprint executável para construção do nível 3 de chatbot do JetGO: agente de IA com base de conhecimento (RAG) + fallback determinístico para o fluxo tradicional.
-> Última atualização: 2026-06-01.
+> Última atualização: 2026-06-16 (re-baseline após auditoria do estado real).
 > Pré-requisito: PRs #6 e #7 mergeadas e Fases 1 (chatbot/flow CRUD) e 2 (WhatsApp + conversations) entregues. Sem isso, este roadmap não roda.
+
+> ⚠️ **AVISO DE REALIDADE (2026-06-16).** Este roadmap foi escrito assumindo **9 PRs isoladas e sequenciais** sobre um `develop` limpo. **A premissa já não vale.** Merges anteriores (`iago-scosta/AI-integracao`) introduziram scaffolds parciais e quebrados de F3.3/F3.4/F3.5 fora de ordem. Antes de seguir qualquer fase, leia o quadro **"Estado real auditado"** no início da seção 6 e a **"Lista de limpeza"** no fim dela. As anotações `> Estado real (2026-06-16)` em cada fase têm precedência sobre o texto de planejamento original.
 
 ---
 
@@ -274,7 +276,21 @@ interface ChatbotAIConfig {
 
 ## 6. Fases de implementação
 
+> ### Estado real auditado (2026-06-16)
+>
+> | Fase | Estado | Resumo |
+> |---|---|---|
+> | F3.1 | ✅ Feito e wired | providers + adapters + `usage.logger` + `/ai/health` + migrations `001‑003` |
+> | F3.2 | ❌ ~15% | só migration `002` + `ingestion.queue.js` órfão + `ingestion.worker.js` quebrado |
+> | F3.3 | ⚠️ ~40% scaffold | `rag/retriever.js` real, mas MMR falso e `ai/rag.service.js` duplicado vazio; não exposto |
+> | F3.4 | ❌ ~20% quebrado | `agent.engine.js` importa 3 módulos inexistentes; não roda |
+> | F3.5 | ⚠️ wired/guardado | webhook despachava p/ engine quebrado; branch `ai_agent` guardada com try/catch em 2026-06-16 |
+>
+> Fora deste roadmap, existe e funciona a feature **"AI Generated" (nível 2)**: geração/ajuste de fluxo por IA em `ai.service.js`. Não confundir com o AI Agent (nível 3) descrito aqui.
+
 ### F3.1 — Infra & provider abstraction (sprint 1)
+
+> **Estado real (2026-06-16): ✅ ENTREGUE.** Tudo presente e wired. `/ai/health` ainda checa a tabela `ai_usage_logs` além dos providers (mais rico que a spec).
 
 **Entregáveis**
 - Migrations 3.1, 3.2, 3.3 aplicadas em dev
@@ -288,6 +304,8 @@ interface ChatbotAIConfig {
 - Logs aparecem em `ai_usage_logs`
 
 ### F3.2 — Pipeline de ingestão (sprint 1-2)
+
+> **Estado real (2026-06-16): ❌ ~15% — PRÓXIMO ENTREGÁVEL, redefinido.** Presente: migration `002` (schema de `knowledge_chunks` + `knowledge_ingestion_jobs` + patch em `knowledge_documents`) e `ingestion/ingestion.queue.js` (producer BullMQ, **mas ninguém o importa**). Faltando/quebrado: `ingestion.worker.js` faz `require('./parsers')` e `./chunker` **inexistentes**; sem `parsers/*`, sem `chunker.js`; sem endpoint `POST /knowledge-bases/:id/documents`; sem lib de multipart (multer/busboy); sem serviço `redis` no compose; worker não sobe no boot; `knowledge.service.js` está **vazio (0 bytes)**. **Antes de construir**, executar a "Lista de limpeza" no fim da seção 6.
 
 **Entregáveis**
 - BullMQ + Redis no docker-compose (`redis:7-alpine`)
@@ -305,6 +323,8 @@ interface ChatbotAIConfig {
 
 ### F3.3 — RAG retrieval (sprint 2)
 
+> **Estado real (2026-06-16): ⚠️ ~40% scaffold, NÃO exposto.** Presente: `rag/retriever.js` com SQL pgvector real (`embedding <=> $1`) **filtrado por `knowledge_base_id`** ✅, e `rag/rag.service.js` (facade `retrieve()`). Problemas: o "MMR" usa um `cosineSimilarity` **falso/heurístico** (`1 - |score_a - score_b|`, sem os vetores reais em memória) — não é MMR de verdade; não há `citation.builder.js` separado; existe um **`ai/rag.service.js` duplicado e vazio** (deletar); nada disso está atrás de endpoint e depende de chunks que só F3.2 produz. Reavaliar o MMR ao retomar.
+
 **Entregáveis**
 - `retriever.js`: query SQL com `embedding <=> $1` ordenando por similaridade, filtrando por `knowledge_base_id`
 - MMR (Maximal Marginal Relevance) em memória para diversificar top-K
@@ -316,6 +336,8 @@ interface ChatbotAIConfig {
 - Cross-tenant proof: query em KB de outra org retorna 0 resultados (testar com 2 orgs no seed)
 
 ### F3.4 — Agent engine + tools (sprint 2-3)
+
+> **Estado real (2026-06-16): ❌ ~20% scaffold quebrado.** `engine/agent.engine.js` existe e esboça o loop tool-use, mas importa **três módulos inexistentes**: `engine/context.builder`, `engine/tool.router` e `observability/trace.logger`. Não há diretório `engine/tools/`. **Não carrega** — qualquer `require('../ai/engine/agent.engine')` em runtime estoura `MODULE_NOT_FOUND`. Como `trace.logger` não existe, `ai_agent_traces` nunca seria escrito. Tratar como rascunho: completar na fase certa (após F3.2/F3.3) ou deletar.
 
 **Entregáveis**
 - `agent.engine.run(input)` implementa loop: monta contexto → chama LLM com tools → se tool_use, executa tool → realimenta → repete até `stop` ou maxIterations (default 4)
@@ -334,6 +356,8 @@ interface ChatbotAIConfig {
 - Quando KB não tem resposta, fallback dispara e FlowEngine assume
 
 ### F3.5 — Integração com webhook e FlowEngine (sprint 3)
+
+> **Estado real (2026-06-16): ⚠️ parcialmente wired, GUARDADO.** `webhook.service.js` já despacha `chatbot.type === 'ai_agent'` para `agent.engine.run()` (F3.4 quebrado) e referencia `engine/fallback.bridge` (inexistente) — ou seja, **qualquer chatbot marcado como `ai_agent` derrubaria o processamento de mensagens inbound daquela conexão**. Em 2026-06-16 essa branch foi **envolvida em try/catch**: em falha, loga e preserva a mensagem inbound sem enviar resposta automática, em vez de estourar. Idempotência hoje é por `metadata->'evolution'->>'messageId'` (funcional), **não** pela coluna `UNIQUE` da spec. Completar de verdade só depois de F3.2→F3.4 prontos.
 
 **Entregáveis**
 - `dispatcher.js` no `webhook/evolution` resolve `chatbot.type`:
@@ -386,6 +410,26 @@ interface ChatbotAIConfig {
 **Critério de aceite**
 - Pen test básico de prompt injection não vaza system prompt
 - DPA / LGPD: org consegue exportar e deletar todos os dados de IA
+
+---
+
+### Lista de limpeza (pré-F3.2) — auditada 2026-06-16
+
+Antes de construir F3.2 de verdade, reconciliar os scaffolds órfãos/quebrados deixados por merges fora de ordem. **Decisão tomada no re-baseline:** documentar agora, deletar quando a fase dona for retomada (não apagar nada ainda, exceto o guard de segurança já aplicado no webhook).
+
+**Já aplicado (2026-06-16):**
+- [x] `webhook.service.js` — branch `type === 'ai_agent'` envolvida em try/catch para não derrubar o inbound enquanto o AgentEngine está quebrado.
+
+**A limpar quando a fase dona for retomada:**
+- [ ] `server/src/modules/ai/rag.service.js` — **vazio (0 bytes), duplicata** de `ai/rag/rag.service.js`. Deletar (F3.3).
+- [ ] `server/src/modules/knowledge/{knowledge.model.js, document.model.js, knowledge.service.js}` — **3 arquivos vazios (0 bytes)**. Decidir entre implementar a camada `knowledge` ou consolidar tudo em `modules/ai/` e deletar (F3.2).
+- [ ] `server/src/modules/ai/ingestion/ingestion.queue.js` — producer órfão (ninguém importa). Manter e wirar em F3.2, ou deletar se o desenho mudar.
+- [ ] `server/src/modules/ai/ingestion/ingestion.worker.js` — reescrever robusto em F3.2 (transaction no upsert, dedupe por checksum, criar `parsers/*` e `chunker.js` que ele importa).
+- [ ] `server/src/modules/ai/engine/agent.engine.js` — completar (criar `context.builder`, `tool.router`, `tools/`, `trace.logger`, `fallback.bridge`) em F3.4, ou deletar até lá para não rotacionar dívida quebrada.
+
+**Lacunas de contrato a registrar:**
+- [ ] Nenhum endpoint `/knowledge-bases*` está montado em `routes/index.js` — chamadas do front a esse path retornam **404** (nem stub). Entra em F3.2.
+- [ ] `docker-compose` ainda sem serviço `redis` (necessário para BullMQ em F3.2).
 
 ---
 
@@ -507,6 +551,8 @@ COST_OPENAI_EMBED_PER_1M=0.02
 ---
 
 ## 11. Sequência sugerida de PRs
+
+> ⚠️ **Esta sequência não foi seguida (2026-06-16).** PR A (schema/PR B providers) está feita, mas pedaços de PR C/D/E (ingestion, rag, agent engine) e PR G (webhook wire) foram mergeados fora de ordem e incompletos via `iago-scosta/AI-integracao`. Use o quadro "Estado real auditado" da seção 6 como verdade, não a lista abaixo. Próxima PR efetiva: **F3.2 (ingestion) redefinida**, precedida pela limpeza dos scaffolds (ver fim da seção 6).
 
 1. **PR A** — migrations + pgvector + tabelas auxiliares (`feat/ai-schema`)
 2. **PR B** — provider abstraction + adapters + health (`feat/ai-providers`)
