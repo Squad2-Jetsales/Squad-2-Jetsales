@@ -18,4 +18,7 @@ router.delete('/:id', c.deleteKb);
 router.get('/:id/documents', c.listDocuments);
 router.post('/:id/documents', handleUpload, c.createDocument);
 
+// Retrieval semântico (RAG) sobre os chunks da KB
+router.post('/:id/search', c.searchKb);
+
 module.exports = router;
