@@ -41,11 +41,13 @@ const updateKbSchema = z
   })
   .strict();
 
-const createDocSchema = z.object({
-  title: z.string().min(1).max(300).optional(),
-  content: z.string().optional(),
-  sourceUrl: z.string().url('sourceUrl inválida').optional(),
-});
+const createDocSchema = z
+  .object({
+    title: z.string().min(1).max(300).optional(),
+    content: z.string().optional(),
+    sourceUrl: z.string().url('sourceUrl inválida').optional(),
+  })
+  .strict();
 
 const listDocsQuerySchema = z.object({
   status: z.enum(['uploaded', 'indexing', 'indexed', 'failed']).optional(),
@@ -53,11 +55,13 @@ const listDocsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-const searchSchema = z.object({
-  query: z.string().min(1, 'query é obrigatória').max(2000),
-  topK: z.number().int().min(1).max(100).optional(),
-  minSimilarity: z.number().min(0).max(1).optional(),
-});
+const searchSchema = z
+  .object({
+    query: z.string().min(1, 'query é obrigatória').max(2000),
+    topK: z.number().int().min(1).max(100).optional(),
+    minSimilarity: z.number().min(0).max(1).optional(),
+  })
+  .strict();
 
 /* ----------------------------- Knowledge bases ---------------------------- */
 
