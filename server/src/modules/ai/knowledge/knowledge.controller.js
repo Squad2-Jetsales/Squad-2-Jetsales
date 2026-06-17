@@ -11,10 +11,22 @@ const service = require('./knowledge.service');
 
 const idParam = z.string().uuid('id inválido');
 
+// A coluna knowledge_chunks.embedding é vector(1536) (fixa). Só aceitamos
+// modelos que produzem 1536 dims — um modelo de outra dimensão (ex.:
+// text-embedding-3-large = 3072) faria todo insert de chunk falhar.
+const EMBEDDING_MODELS_1536 = ['text-embedding-3-small', 'text-embedding-ada-002'];
+const embeddingModelField = z
+  .enum(EMBEDDING_MODELS_1536, {
+    errorMap: () => ({
+      message: `embeddingModel deve ser de 1536 dims: ${EMBEDDING_MODELS_1536.join(' | ')}`,
+    }),
+  })
+  .optional();
+
 const createKbSchema = z.object({
   chatbotId: z.string().uuid('chatbotId inválido'),
   name: z.string().min(1, 'name é obrigatório').max(200),
-  embeddingModel: z.string().min(1).max(120).optional(),
+  embeddingModel: embeddingModelField,
   chunkSize: z.number().int().min(100).max(8000).optional(),
   chunkOverlap: z.number().int().min(0).max(2000).optional(),
 });
@@ -22,7 +34,7 @@ const createKbSchema = z.object({
 const updateKbSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
-    embeddingModel: z.string().min(1).max(120).optional(),
+    embeddingModel: embeddingModelField,
     chunkSize: z.number().int().min(100).max(8000).optional(),
     chunkOverlap: z.number().int().min(0).max(2000).optional(),
   })

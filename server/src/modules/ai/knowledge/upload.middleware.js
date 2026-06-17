@@ -10,15 +10,16 @@ const { httpError } = require('../../../middlewares/error.middleware');
 
 const MAX_BYTES = Number(process.env.INGESTION_MAX_FILE_BYTES) || 20 * 1024 * 1024;
 
+// Nota: `.doc` (Word legado/binário) NÃO é aceito — o parser usa `mammoth`,
+// que só lê `.docx` (OOXML). Aceitar `.doc` garantiria falha na ingestão.
 const ALLOWED_MIME = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword',
   'text/html',
   'text/plain',
   'text/markdown',
 ]);
-const ALLOWED_EXT = new Set(['.pdf', '.docx', '.doc', '.html', '.htm', '.txt', '.md', '.markdown']);
+const ALLOWED_EXT = new Set(['.pdf', '.docx', '.html', '.htm', '.txt', '.md', '.markdown']);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -39,8 +40,15 @@ const uploadSingle = upload.single('file');
 function handleUpload(req, res, next) {
   uploadSingle(req, res, (err) => {
     if (!err) return next();
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return next(httpError(400, `Arquivo excede o limite de ${MAX_BYTES} bytes`, 'FILE_TOO_LARGE'));
+    // Qualquer erro do multer (tamanho, campo inesperado, etc.) é input ruim → 400.
+    if (err instanceof multer.MulterError) {
+      const msg =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? `Arquivo excede o limite de ${MAX_BYTES} bytes`
+          : err.code === 'LIMIT_UNEXPECTED_FILE'
+            ? "Campo de arquivo inesperado — use o campo 'file'"
+            : `Falha no upload do arquivo: ${err.message}`;
+      return next(httpError(400, msg, err.code));
     }
     return next(err);
   });

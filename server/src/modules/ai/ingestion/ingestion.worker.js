@@ -50,6 +50,27 @@ async function processIngestion(job) {
     overlap: kb.chunk_overlap || 150,
   });
 
+  // 3b. Sem texto extraível → falha determinística (não adianta re-tentar).
+  // Marca 'failed' direto e retorna (sem throw) para não gastar os 3 retries.
+  // Caso típico: PDF escaneado/só-imagem, ou arquivo realmente vazio.
+  if (chunks.length === 0) {
+    await db.transaction(async (trx) => {
+      await trx('knowledge_documents').where({ id: documentId }).update({
+        status: 'failed',
+        chunk_count: 0,
+        updated_at: trx.fn.now(),
+      });
+      if (jobId) {
+        await trx('knowledge_ingestion_jobs').where({ id: jobId }).update({
+          status: 'failed',
+          error: 'Nenhum texto extraível (arquivo vazio ou sem camada de texto, ex.: PDF escaneado)',
+          finished_at: new Date(),
+        });
+      }
+    });
+    return { chunkCount: 0, tokensUsed: 0, empty: true };
+  }
+
   // 4. Embed em batches; acumula vetores + tokens; loga uso por batch.
   const embedder = resolveEmbeddingProvider();
   const embeddings = [];

@@ -20,13 +20,8 @@ function pickKind({ mimeType = '', storageKey = '', title = '' }) {
   const name = (storageKey || title || '').toLowerCase();
 
   if (m.includes('pdf') || name.endsWith('.pdf')) return 'pdf';
-  if (
-    m.includes('wordprocessingml') ||
-    m === 'application/msword' ||
-    name.endsWith('.docx')
-  ) {
-    return 'docx';
-  }
+  // Só DOCX (OOXML) — `.doc` legado não é suportado pelo mammoth (e é barrado no upload).
+  if (m.includes('wordprocessingml') || name.endsWith('.docx')) return 'docx';
   if (m.includes('html') || name.endsWith('.html') || name.endsWith('.htm')) return 'html';
   return 'text'; // text/plain, text/markdown, .txt, .md
 }
