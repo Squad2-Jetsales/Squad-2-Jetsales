@@ -9,7 +9,8 @@
     "migrate:make": "knex --knexfile knexfile.js migrate:make",
     "migrate:rollback": "knex --knexfile knexfile.js migrate:rollback",
     "seed": "knex --knexfile knexfile.js seed:run",
-    "ai:ping": "node scripts/ping-ai.js"
+    "ai:ping": "node scripts/ping-ai.js",
+    "worker": "node src/worker.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
@@ -25,6 +26,7 @@
     "jsonwebtoken": "^9.0.2",
     "knex": "^3.1.0",
     "mammoth": "^1.12.0",
+    "multer": "^2.2.0",
     "openai": "^4.77.0",
     "pdf-parse": "^2.4.5",
     "pg": "^8.13.1",

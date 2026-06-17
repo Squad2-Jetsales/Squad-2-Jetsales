@@ -38,6 +38,7 @@ Substitui o JetGO legacy (formulários sequenciais rígidos + visualização est
 - **Fase 1** — `chatbot.module` + `flow.module` + `flow-nodes` + `flow-edges` em knex
 - **Fase 2** — WhatsApp (EvolutionAPI), webhook, conversations, tickets, dashboard
 - **Fase 3.1** — Infra de IA: pgvector, migrations `20260601_001..003`, provider abstraction (`modules/ai/providers/{anthropic,openai}.adapter.js`), `usage.logger`, `GET /api/v1/ai/health`, script `npm run ai:ping`
+- **Fase 3.2** — Pipeline de ingestão RAG: upload de documentos (multipart/texto), parsers (pdf/docx/html/txt/md), `chunker.js` recursivo, `storage.js` local, worker BullMQ (`parse→chunk→embed→knowledge_chunks`), endpoints `/knowledge-bases` + `/knowledge-documents` em `modules/ai/knowledge/`, `redis` no compose, `npm run worker`
 - **AI Generated (nível 2 do produto)** — geração e ajuste de fluxos por IA via `ai.service.js` (`generateInitialFlow` / `adjustExistingFlow`), consumido pelo módulo `chatbot`. Funciona e está wired, **mas não faz parte do roadmap RAG** abaixo (que cobre o nível 3, AI Agent). Não confundir os dois.
 
 ### Estado real da Fase 3 (auditado 2026-06-16)
@@ -47,12 +48,12 @@ Substitui o JetGO legacy (formulários sequenciais rígidos + visualização est
 | Fase | Escopo | Estado real |
 |---|---|---|
 | **F3.1** Infra & providers | adapters, usage.logger, /ai/health | ✅ **Feito e wired** |
-| **F3.2** Ingestão | parsers, chunker, upload, worker | ❌ **~15%** — só migration `002` + `ingestion.queue.js` órfão + `ingestion.worker.js` **quebrado** (`require('./parsers')` e `./chunker` inexistentes). Sem endpoints, multer, redis; `knowledge.service.js` vazio |
+| **F3.2** Ingestão | parsers, chunker, upload, worker | ✅ **Feito e wired** — parsers (pdf/docx/html/txt/md), `chunker.js`, `storage.js`, worker BullMQ robusto (transação no upsert, dedupe por checksum, falha só na última tentativa), endpoints KB+documentos montados, `redis` no compose, `npm run worker`. Camada vazia `modules/knowledge/` removida (consolidada em `modules/ai/knowledge/`) |
 | **F3.3** RAG retrieval | retriever pgvector + MMR + citações | ⚠️ **~40%** — `rag/retriever.js` com SQL real filtrado por `knowledge_base_id`, mas "MMR" usa `cosineSimilarity` falso/heurístico; `ai/rag.service.js` duplicado e vazio; não exposto |
 | **F3.4** Agent engine | loop tool-use + tools | ❌ **~20%** — `engine/agent.engine.js` importa `context.builder`, `tool.router`, `trace.logger` **inexistentes**. Não roda |
 | **F3.5** Webhook wire | dispatcher ai_agent | ⚠️ **Wired, mas era uma mina** — `webhook.service.js` despacha `type==='ai_agent'` para o engine quebrado. **Guardado com try/catch** em 2026-06-16 para não derrubar o inbound |
 
-**Próximo passo real:** F3.2 (ingestão) continua sendo o próximo entregável, **mas redefinida** para reconciliar/limpar os scaffolds quebrados antes de construir. Ver lista de limpeza e estado por fase em [`AI_AGENT_RAG_ROADMAP.md`](./docs/AI_AGENT_RAG_ROADMAP.md) §6.
+**Próximo passo real:** F3.3 (RAG retrieval) — reavaliar o "MMR" falso de `rag/retriever.js`, deletar o `ai/rag.service.js` duplicado vazio e expor o retrieval atrás de endpoint, agora consumindo os chunks que a F3.2 produz. Ver estado por fase em [`AI_AGENT_RAG_ROADMAP.md`](./docs/AI_AGENT_RAG_ROADMAP.md) §6.
 
 Detalhes técnicos do backend até a Fase 2 em [`jetgo-context.md`](./jetgo-context.md).
 

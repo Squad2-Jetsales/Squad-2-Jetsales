@@ -20,6 +20,21 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    # Broker do BullMQ (fila de ingestão assíncrona da Fase 3 / F3.2).
+    image: redis:7-alpine
+    container_name: jetsales_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build: ./server
     container_name: jetsales_backend
@@ -27,6 +42,26 @@ services:
       - "3001:3001"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./server/.env.docker
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+
+  worker:
+    # Consumer da fila de ingestão (parse → chunk → embed → knowledge_chunks).
+    # Mesmo build do backend, mas roda o entrypoint do worker (processo separado
+    # para que upload nunca bloqueie request).
+    build: ./server
+    container_name: jetsales_worker
+    command: npm run worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     env_file:
       - ./server/.env.docker
@@ -36,3 +71,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
