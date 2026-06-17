@@ -6,6 +6,7 @@
 
 const { z } = require('zod');
 const service = require('./knowledge.service');
+const rag = require('../rag/rag.service');
 
 /* -------------------------------- Schemas -------------------------------- */
 
@@ -50,6 +51,12 @@ const listDocsQuerySchema = z.object({
   status: z.enum(['uploaded', 'indexing', 'indexed', 'failed']).optional(),
   cursor: z.string().datetime().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const searchSchema = z.object({
+  query: z.string().min(1, 'query é obrigatória').max(2000),
+  topK: z.number().int().min(1).max(100).optional(),
+  minSimilarity: z.number().min(0).max(1).optional(),
 });
 
 /* ----------------------------- Knowledge bases ---------------------------- */
@@ -153,6 +160,30 @@ exports.reindexDocument = async (req, res, next) => {
     const id = idParam.parse(req.params.id);
     const job = await service.reindexDocument(req.auth.organizationId, id);
     res.status(202).json(job);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/* ---------------------------------- RAG ----------------------------------- */
+
+// POST /knowledge-bases/:id/search — retrieval semântico nos chunks da KB.
+// Tenant-scoped: rag.retrieve chama assertKbOwned (KB de outra org → 404).
+exports.searchKb = async (req, res, next) => {
+  try {
+    const kbId = idParam.parse(req.params.id);
+    const { query, topK, minSimilarity } = searchSchema.parse(req.body || {});
+    const result = await rag.retrieve(req.auth.organizationId, kbId, query, {
+      topK,
+      minSimilarity,
+    });
+    res.json({
+      query,
+      count: result.citations.length,
+      retrievedCount: result.retrievedCount,
+      model: result.model,
+      citations: result.citations,
+    });
   } catch (err) {
     next(err);
   }

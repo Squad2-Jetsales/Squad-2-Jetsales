@@ -282,7 +282,7 @@ interface ChatbotAIConfig {
 > |---|---|---|
 > | F3.1 | ✅ Feito e wired | providers + adapters + `usage.logger` + `/ai/health` + migrations `001‑003` |
 > | F3.2 | ✅ Feito e wired | parsers + chunker + storage + worker BullMQ + upload + endpoints KB/documentos + redis no compose (`feat/ai-ingestion-pipeline`) |
-> | F3.3 | ⚠️ ~40% scaffold | `rag/retriever.js` real, mas MMR falso e `ai/rag.service.js` duplicado vazio; não exposto |
+> | F3.3 | ✅ Feito e wired | retriever pgvector + **MMR real** + `citation.builder` + facade tenant-scoped (custo do embed logado), exposto em `POST /knowledge-bases/:id/search` + `npm run rag:smoke`; duplicata vazia removida (`feat/ai-rag-retrieval`) |
 > | F3.4 | ❌ ~20% quebrado | `agent.engine.js` importa 3 módulos inexistentes; não roda |
 > | F3.5 | ⚠️ wired/guardado | webhook despachava p/ engine quebrado; branch `ai_agent` guardada com try/catch em 2026-06-16 |
 >
@@ -323,7 +323,7 @@ interface ChatbotAIConfig {
 
 ### F3.3 — RAG retrieval (sprint 2)
 
-> **Estado real (2026-06-16): ⚠️ ~40% scaffold, NÃO exposto.** Presente: `rag/retriever.js` com SQL pgvector real (`embedding <=> $1`) **filtrado por `knowledge_base_id`** ✅, e `rag/rag.service.js` (facade `retrieve()`). Problemas: o "MMR" usa um `cosineSimilarity` **falso/heurístico** (`1 - |score_a - score_b|`, sem os vetores reais em memória) — não é MMR de verdade; não há `citation.builder.js` separado; existe um **`ai/rag.service.js` duplicado e vazio** (deletar); nada disso está atrás de endpoint e depende de chunks que só F3.2 produz. Reavaliar o MMR ao retomar.
+> **Estado real (2026-06-17): ✅ ENTREGUE** (`feat/ai-rag-retrieval`). `rag/retriever.js`: top-K pgvector (`embedding <=> $1`) filtrado por `knowledge_base_id`, agora trazendo a coluna `embedding` para um **MMR de verdade** — `cosineSimilarity` real sobre os vetores parseados dos candidatos (substituiu a heurística `1 - |score_a - score_b|`). `rag/citation.builder.js` novo: forma única de saída `{ chunkId, documentId, title, snippet, score }`, sem vazar o vetor. `rag/rag.service.js` reescrito: assinatura tenant-aware `retrieve(organizationId, knowledgeBaseId, query, opts)` com `assertKbOwned`, defaults via env (`RAG_TOP_K_RETRIEVE/RETURN`, `RAG_MIN_SIMILARITY`) e log do embed da query em `ai_usage_logs`. Exposto em `POST /knowledge-bases/:id/search` (zod + tenant-scoped). Duplicata vazia `ai/rag.service.js` deletada. Smoke: `npm run rag:smoke -- --kb <id> --query "..."` (inclui prova cross-tenant).
 
 **Entregáveis**
 - `retriever.js`: query SQL com `embedding <=> $1` ordenando por similaridade, filtrando por `knowledge_base_id`
@@ -427,8 +427,10 @@ Antes de construir F3.2 de verdade, reconciliar os scaffolds órfãos/quebrados 
 - [x] `/knowledge-bases*` e `/knowledge-documents*` montados em `routes/index.js` (via `loadOrStub`).
 - [x] `docker-compose` ganhou `redis:7-alpine` (+ serviço `worker`).
 
+**Feito na F3.3 (`feat/ai-rag-retrieval`):**
+- [x] `server/src/modules/ai/rag.service.js` — duplicata vazia (0 bytes) deletada.
+
 **A limpar quando a fase dona for retomada:**
-- [ ] `server/src/modules/ai/rag.service.js` — **vazio (0 bytes), duplicata** de `ai/rag/rag.service.js`. Deletar (F3.3).
 - [ ] `server/src/modules/ai/engine/agent.engine.js` — completar (criar `context.builder`, `tool.router`, `tools/`, `trace.logger`, `fallback.bridge`) em F3.4, ou deletar até lá para não rotacionar dívida quebrada.
 
 ---
