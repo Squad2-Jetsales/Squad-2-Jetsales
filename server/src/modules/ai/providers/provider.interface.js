@@ -11,7 +11,8 @@
  * @property {'system' | 'user' | 'assistant' | 'tool'} role
  * @property {string} content
  * @property {string} [name]      // p/ tool messages
- * @property {string} [toolCallId] // p/ tool messages
+ * @property {string} [toolCallId] // p/ tool messages (role 'tool': id do tool_use que originou)
+ * @property {ChatToolCall[]} [toolCalls] // p/ turno 'assistant' que chamou tools (realimentação do loop)
  */
 
 /**
