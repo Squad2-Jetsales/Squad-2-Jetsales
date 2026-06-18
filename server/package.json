@@ -11,6 +11,7 @@
     "seed": "knex --knexfile knexfile.js seed:run",
     "ai:ping": "node scripts/ping-ai.js",
     "rag:smoke": "node scripts/rag-smoke.js",
+    "agent:smoke": "node scripts/agent-smoke.js",
     "worker": "node src/worker.js"
   },
   "dependencies": {

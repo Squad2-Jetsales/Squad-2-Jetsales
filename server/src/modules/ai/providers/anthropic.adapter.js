@@ -30,23 +30,44 @@ function toAnthropicMessages(messages) {
     .map((m) => m.content)
     .join('\n\n');
 
-  const turns = messages
-    .filter((m) => m.role !== 'system')
-    .map((m) => {
-      if (m.role === 'tool') {
-        return {
-          role: 'user',
-          content: [
-            {
-              type: 'tool_result',
-              tool_use_id: m.toolCallId,
-              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-            },
-          ],
-        };
+  // Anthropic exige alternância de papéis e que vários tool_use de um mesmo
+  // turno assistant sejam respondidos por UM único turno user com múltiplos
+  // blocos tool_result. Por isso coalescemos role:'tool' consecutivos (um turno
+  // user com content array) em vez de emitir vários turns user seguidos.
+  const turns = [];
+  for (const m of messages) {
+    if (m.role === 'system') continue;
+
+    if (m.role === 'tool') {
+      const block = {
+        type: 'tool_result',
+        tool_use_id: m.toolCallId,
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+      };
+      const last = turns[turns.length - 1];
+      if (last && last.role === 'user' && Array.isArray(last.content)) {
+        last.content.push(block);
+      } else {
+        turns.push({ role: 'user', content: [block] });
       }
-      return { role: m.role, content: m.content };
-    });
+      continue;
+    }
+
+    // Turno assistant que chamou tools: reconstrói os blocos tool_use (+ texto
+    // opcional) para que o tool_result seguinte tenha o tool_use_id casado —
+    // sem isso a API rejeita o tool_result órfão e o loop tool-use quebra.
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      const blocks = [];
+      if (m.content) blocks.push({ type: 'text', text: m.content });
+      for (const tc of m.toolCalls) {
+        blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.args || {} });
+      }
+      turns.push({ role: 'assistant', content: blocks });
+      continue;
+    }
+
+    turns.push({ role: m.role, content: m.content });
+  }
 
   return { system, messages: turns };
 }

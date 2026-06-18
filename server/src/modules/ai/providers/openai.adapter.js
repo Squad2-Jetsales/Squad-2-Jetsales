@@ -33,6 +33,19 @@ function toOpenAIMessages(messages) {
         tool_call_id: m.toolCallId,
       };
     }
+    // Turno assistant que chamou tools: emite tool_calls para que a mensagem
+    // role:'tool' seguinte (com tool_call_id) seja aceita pela API.
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      return {
+        role: 'assistant',
+        content: m.content || null,
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) },
+        })),
+      };
+    }
     return { role: m.role, content: m.content, ...(m.name ? { name: m.name } : {}) };
   });
 }

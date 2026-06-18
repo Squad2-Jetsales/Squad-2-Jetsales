@@ -283,8 +283,8 @@ interface ChatbotAIConfig {
 > | F3.1 | ✅ Feito e wired | providers + adapters + `usage.logger` + `/ai/health` + migrations `001‑003` |
 > | F3.2 | ✅ Feito e wired | parsers + chunker + storage + worker BullMQ + upload + endpoints KB/documentos + redis no compose (`feat/ai-ingestion-pipeline`) |
 > | F3.3 | ✅ Feito e wired | retriever pgvector + **MMR real** + `citation.builder` + facade tenant-scoped (custo do embed logado), exposto em `POST /knowledge-bases/:id/search` + `npm run rag:smoke`; duplicata vazia removida (`feat/ai-rag-retrieval`) |
-> | F3.4 | ❌ ~20% quebrado | `agent.engine.js` importa 3 módulos inexistentes; não roda |
-> | F3.5 | ⚠️ wired/guardado | webhook despachava p/ engine quebrado; branch `ai_agent` guardada com try/catch em 2026-06-16 |
+> | F3.4 | ✅ Feito e validado | engine + `context.builder` + `tool.router` + `tools/` + `trace.logger`; contrato de provider estendido p/ tool-use multi-turno; smoke `agent:smoke` verde (Anthropic+OpenAI) (`feat/ai-agent-engine`) |
+> | F3.5 | ⏳ Próxima | engine agora funciona; falta `fallback.bridge` (handoff real), remover o guard try/catch do webhook e idempotência `evolution_message_id UNIQUE` |
 >
 > Fora deste roadmap, existe e funciona a feature **"AI Generated" (nível 2)**: geração/ajuste de fluxo por IA em `ai.service.js`. Não confundir com o AI Agent (nível 3) descrito aqui.
 
@@ -337,7 +337,7 @@ interface ChatbotAIConfig {
 
 ### F3.4 — Agent engine + tools (sprint 2-3)
 
-> **Estado real (2026-06-16): ❌ ~20% scaffold quebrado.** `engine/agent.engine.js` existe e esboça o loop tool-use, mas importa **três módulos inexistentes**: `engine/context.builder`, `engine/tool.router` e `observability/trace.logger`. Não há diretório `engine/tools/`. **Não carrega** — qualquer `require('../ai/engine/agent.engine')` em runtime estoura `MODULE_NOT_FOUND`. Como `trace.logger` não existe, `ai_agent_traces` nunca seria escrito. Tratar como rascunho: completar na fase certa (após F3.2/F3.3) ou deletar.
+> **Estado real (2026-06-18): ✅ ENTREGUE e VALIDADO** (`feat/ai-agent-engine`). `agent.engine.run()` faz o loop tool-use nativo (chat → tool_use → realimenta turno `assistant`+`tool` → repete até stop ou `AI_MAX_AGENT_ITERATIONS`). Criados: `engine/context.builder.js` (system+guardrails+contexto recuperado+histórico; descarta `assistant` inicial p/ respeitar a alternância da Anthropic), `engine/tool.router.js` (defs + whitelist `enabledTools` + execução), `engine/tools/{search-kb,capture-field,transfer-to-human,trigger-flow}.js`, `observability/trace.logger.js` (grava `ai_agent_traces`, nunca lança). **Assinatura RAG corrigida** para a da F3.3 (`retrieve(orgId, kbId, query, opts)` → `{ citations }`). Contrato de provider **estendido** (turno `assistant` com `toolCalls` + coalescência de `tool_result` na Anthropic) p/ o tool-use multi-turno. Smoke `npm run agent:smoke -- --chatbot <id>` validou ao vivo: answer+citações, `transfer_to_human` (ticket+`waiting`), `fallback_flow` — em Anthropic `claude-sonnet-4-6` e OpenAI `gpt-4o-mini`. **Escopo engine-only**: `fallback.bridge`, re-wire do webhook e idempotência ficam na F3.5. **Pendência de tuning**: `minConfidence` default 0.65 é alto vs scores reais (~0.4–0.5) — ver risco "LLM alucinar"/calibração; ajustar na F3.7.
 
 **Entregáveis**
 - `agent.engine.run(input)` implementa loop: monta contexto → chama LLM com tools → se tool_use, executa tool → realimenta → repete até `stop` ou maxIterations (default 4)
@@ -430,8 +430,8 @@ Antes de construir F3.2 de verdade, reconciliar os scaffolds órfãos/quebrados 
 **Feito na F3.3 (`feat/ai-rag-retrieval`):**
 - [x] `server/src/modules/ai/rag.service.js` — duplicata vazia (0 bytes) deletada.
 
-**A limpar quando a fase dona for retomada:**
-- [ ] `server/src/modules/ai/engine/agent.engine.js` — completar (criar `context.builder`, `tool.router`, `tools/`, `trace.logger`, `fallback.bridge`) em F3.4, ou deletar até lá para não rotacionar dívida quebrada.
+**Feito na F3.4 (`feat/ai-agent-engine`):**
+- [x] `server/src/modules/ai/engine/agent.engine.js` — **completado**: criados `context.builder`, `tool.router`, `tools/` (search_kb/capture_field/transfer_to_human/trigger_flow) e `observability/trace.logger`. Assinatura RAG corrigida. `fallback.bridge` fica na F3.5 (handoff real ao FlowEngine).
 
 ---
 

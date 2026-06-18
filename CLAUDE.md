@@ -1,7 +1,7 @@
 # CLAUDE.md — JetGO
 
 > Contexto persistente para qualquer sessão Claude trabalhando neste projeto.
-> Última atualização: 2026-06-16 (re-baseline da Fase 3 após auditoria do estado real).
+> Última atualização: 2026-06-18 (F3.4 Agent engine implementada e validada).
 
 ---
 
@@ -40,6 +40,7 @@ Substitui o JetGO legacy (formulários sequenciais rígidos + visualização est
 - **Fase 3.1** — Infra de IA: pgvector, migrations `20260601_001..003`, provider abstraction (`modules/ai/providers/{anthropic,openai}.adapter.js`), `usage.logger`, `GET /api/v1/ai/health`, script `npm run ai:ping`
 - **Fase 3.2** — Pipeline de ingestão RAG: upload de documentos (multipart/texto), parsers (pdf/docx/html/txt/md), `chunker.js` recursivo, `storage.js` local, worker BullMQ (`parse→chunk→embed→knowledge_chunks`), endpoints `/knowledge-bases` + `/knowledge-documents` em `modules/ai/knowledge/`, `redis` no compose, `npm run worker`
 - **Fase 3.3** — RAG retrieval: `rag/retriever.js` (pgvector top-K + **MMR real** sobre os embeddings dos candidatos), `rag/citation.builder.js`, facade `rag/rag.service.js` (tenancy via `assertKbOwned` + custo do embed em `ai_usage_logs` + defaults via env `RAG_*`), endpoint `POST /knowledge-bases/:id/search`, smoke `npm run rag:smoke`. Duplicata vazia `ai/rag.service.js` removida
+- **Fase 3.4** — Agent engine: `engine/agent.engine.js` reescrito (loop tool-use nativo: chat → tool_use → realimenta turno assistant+tool → repete até stop/`AI_MAX_AGENT_ITERATIONS`) consumindo o `rag.service` da F3.3. Novos: `engine/context.builder.js` (system+guardrails+contexto+histórico), `engine/tool.router.js` (defs+whitelist), `engine/tools/{search-kb,capture-field,transfer-to-human,trigger-flow}.js`, `observability/trace.logger.js` (grava `ai_agent_traces`). Contrato de provider estendido (turno `assistant` com `toolCalls`) p/ tool-use multi-turno. Smoke `npm run agent:smoke`, **validado ao vivo** em Anthropic `claude-sonnet-4-6` e OpenAI `gpt-4o-mini`. **Escopo engine-only**: `fallback.bridge`, re-wire do webhook e idempotência `UNIQUE` ficam na F3.5
 - **AI Generated (nível 2 do produto)** — geração e ajuste de fluxos por IA via `ai.service.js` (`generateInitialFlow` / `adjustExistingFlow`), consumido pelo módulo `chatbot`. Funciona e está wired, **mas não faz parte do roadmap RAG** abaixo (que cobre o nível 3, AI Agent). Não confundir os dois.
 
 ### Estado real da Fase 3 (auditado 2026-06-16)
@@ -51,10 +52,10 @@ Substitui o JetGO legacy (formulários sequenciais rígidos + visualização est
 | **F3.1** Infra & providers | adapters, usage.logger, /ai/health | ✅ **Feito e wired** |
 | **F3.2** Ingestão | parsers, chunker, upload, worker | ✅ **Feito e wired** — parsers (pdf/docx/html/txt/md), `chunker.js`, `storage.js`, worker BullMQ robusto (transação no upsert, dedupe por checksum, falha só na última tentativa), endpoints KB+documentos montados, `redis` no compose, `npm run worker`. Camada vazia `modules/knowledge/` removida (consolidada em `modules/ai/knowledge/`) |
 | **F3.3** RAG retrieval | retriever pgvector + MMR + citações | ✅ **Feito e wired** — `rag/retriever.js` (top-K filtrado por `knowledge_base_id` + **MMR real** sobre os vetores), `rag/citation.builder.js`, facade `rag/rag.service.js` (tenancy + log de custo do embed + env `RAG_*`), exposto em `POST /knowledge-bases/:id/search`; duplicata vazia `ai/rag.service.js` deletada |
-| **F3.4** Agent engine | loop tool-use + tools | ❌ **~20%** — `engine/agent.engine.js` importa `context.builder`, `tool.router`, `trace.logger` **inexistentes**. Não roda |
-| **F3.5** Webhook wire | dispatcher ai_agent | ⚠️ **Wired, mas era uma mina** — `webhook.service.js` despacha `type==='ai_agent'` para o engine quebrado. **Guardado com try/catch** em 2026-06-16 para não derrubar o inbound |
+| **F3.4** Agent engine | loop tool-use + tools | ✅ **Feito e validado** — `agent.engine.run()` (loop tool-use + realimentação), `context.builder`, `tool.router` + `tools/` (search_kb/capture_field/transfer_to_human/trigger_flow), `trace.logger` → `ai_agent_traces`. Contrato de provider estendido p/ tool-use multi-turno. Smoke `npm run agent:smoke` verde nos 2 providers (Anthropic+OpenAI). Handoff real ao FlowEngine + idempotência = F3.5 |
+| **F3.5** Webhook wire | dispatcher ai_agent | ⏳ **Próxima** — o webhook já chama o engine (agora funcional) sob try/catch, então o caminho *answer* já responde; falta `engine/fallback.bridge.js` (handoff real ao FlowEngine), remover o guard try/catch, e idempotência `evolution_message_id UNIQUE` em `messages` |
 
-**Próximo passo real:** F3.4 (Agent engine) — `engine/agent.engine.js` ainda importa `context.builder`, `tool.router` e `trace.logger` inexistentes (não carrega). Completar o loop tool-use (ou deletar o rascunho) consumindo o `rag.service.retrieve` já pronto na F3.3, e só então religar o webhook `ai_agent` (F3.5). Ver estado por fase em [`AI_AGENT_RAG_ROADMAP.md`](./docs/AI_AGENT_RAG_ROADMAP.md) §6.
+**Próximo passo real:** F3.5 (Webhook wire) — criar `engine/fallback.bridge.js` (dirige o FlowEngine a partir do `fallbackFlowId`/`flow_context`), remover o guard try/catch do `webhook.service.js`, e adicionar idempotência `evolution_message_id UNIQUE` em `messages`. O AgentEngine (F3.4) já está pronto e validado. **Pendência de tuning** (não bloqueia): `minConfidence` default 0.65 é alto demais vs scores reais do embedding (~0.4–0.5) — quase todo acerto cai em fallback; calibrar na F3.7. Ver estado por fase em [`AI_AGENT_RAG_ROADMAP.md`](./docs/AI_AGENT_RAG_ROADMAP.md) §6.
 
 Detalhes técnicos do backend até a Fase 2 em [`jetgo-context.md`](./jetgo-context.md).
 
