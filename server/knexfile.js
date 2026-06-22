@@ -25,9 +25,16 @@ const base = {
 // para o pg aceitar o handshake — rejectUnauthorized:false porque os certs
 // dessas plataformas geralmente são auto-assinados/intermediários.
 function productionConnection() {
-  if (!process.env.DATABASE_URL) return base.connection;
+  const connectionString =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL_NON_POOLING;
+
+  if (!connectionString) return base.connection;
+
   return {
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
     ssl: { rejectUnauthorized: false },
   };
 }
