@@ -7,9 +7,17 @@
 const { Queue } = require('bullmq');
 
 const QUEUE_NAME = 'ingestion';
-const connection = { url: process.env.REDIS_URL || 'redis://localhost:6379' };
+const REDIS_URL = (process.env.REDIS_URL || '').trim();
 
-const ingestionQueue = new Queue(QUEUE_NAME, { connection });
+let ingestionQueue = null;
+
+function getQueue() {
+  if (!REDIS_URL) return null;
+  if (!ingestionQueue) {
+    ingestionQueue = new Queue(QUEUE_NAME, { connection: { url: REDIS_URL } });
+  }
+  return ingestionQueue;
+}
 
 /**
  * Enfileira o processamento de um documento.
@@ -18,7 +26,12 @@ const ingestionQueue = new Queue(QUEUE_NAME, { connection });
  *   jobId      → linha em knowledge_ingestion_jobs (rastreio do ciclo de vida)
  */
 async function enqueueIngestion({ documentId, jobId }) {
-  await ingestionQueue.add(
+  const queue = getQueue();
+  if (!queue) {
+    throw new Error('REDIS_URL não configurado');
+  }
+
+  await queue.add(
     'process',
     { documentId, jobId },
     {
@@ -30,4 +43,4 @@ async function enqueueIngestion({ documentId, jobId }) {
   );
 }
 
-module.exports = { ingestionQueue, enqueueIngestion, QUEUE_NAME };
+module.exports = { getQueue, enqueueIngestion, QUEUE_NAME };
