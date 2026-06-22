@@ -13,9 +13,13 @@ let ingestionQueue = null;
 
 function getQueue() {
   if (!REDIS_URL) return null;
+
   if (!ingestionQueue) {
-    ingestionQueue = new Queue(QUEUE_NAME, { connection: { url: REDIS_URL } });
+    ingestionQueue = new Queue(QUEUE_NAME, {
+      connection: { url: REDIS_URL },
+    });
   }
+
   return ingestionQueue;
 }
 
@@ -27,8 +31,9 @@ function getQueue() {
  */
 async function enqueueIngestion({ documentId, jobId }) {
   const queue = getQueue();
+
   if (!queue) {
-    throw new Error('REDIS_URL não configurado');
+    throw new Error('REDIS_URL nao configurado');
   }
 
   await queue.add(
