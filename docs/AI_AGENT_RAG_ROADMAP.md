@@ -1,8 +1,10 @@
 # JetGO — Roadmap AI Agent + RAG (Nível 3)
 
 > Blueprint executável para construção do nível 3 de chatbot do JetGO: agente de IA com base de conhecimento (RAG) + fallback determinístico para o fluxo tradicional.
-> Última atualização: 2026-06-01.
+> Última atualização: 2026-06-16 (re-baseline após auditoria do estado real).
 > Pré-requisito: PRs #6 e #7 mergeadas e Fases 1 (chatbot/flow CRUD) e 2 (WhatsApp + conversations) entregues. Sem isso, este roadmap não roda.
+
+> ⚠️ **AVISO DE REALIDADE (2026-06-16).** Este roadmap foi escrito assumindo **9 PRs isoladas e sequenciais** sobre um `develop` limpo. **A premissa já não vale.** Merges anteriores (`iago-scosta/AI-integracao`) introduziram scaffolds parciais e quebrados de F3.3/F3.4/F3.5 fora de ordem. Antes de seguir qualquer fase, leia o quadro **"Estado real auditado"** no início da seção 6 e a **"Lista de limpeza"** no fim dela. As anotações `> Estado real (2026-06-16)` em cada fase têm precedência sobre o texto de planejamento original.
 
 ---
 
@@ -274,7 +276,21 @@ interface ChatbotAIConfig {
 
 ## 6. Fases de implementação
 
+> ### Estado real auditado (2026-06-16)
+>
+> | Fase | Estado | Resumo |
+> |---|---|---|
+> | F3.1 | ✅ Feito e wired | providers + adapters + `usage.logger` + `/ai/health` + migrations `001‑003` |
+> | F3.2 | ✅ Feito e wired | parsers + chunker + storage + worker BullMQ + upload + endpoints KB/documentos + redis no compose (`feat/ai-ingestion-pipeline`) |
+> | F3.3 | ✅ Feito e wired | retriever pgvector + **MMR real** + `citation.builder` + facade tenant-scoped (custo do embed logado), exposto em `POST /knowledge-bases/:id/search` + `npm run rag:smoke`; duplicata vazia removida (`feat/ai-rag-retrieval`) |
+> | F3.4 | ✅ Feito e validado | engine + `context.builder` + `tool.router` + `tools/` + `trace.logger`; contrato de provider estendido p/ tool-use multi-turno; smoke `agent:smoke` verde (Anthropic+OpenAI) (`feat/ai-agent-engine`) |
+> | F3.5 | ⏳ Próxima | engine agora funciona; falta `fallback.bridge` (handoff real), remover o guard try/catch do webhook e idempotência `evolution_message_id UNIQUE` |
+>
+> Fora deste roadmap, existe e funciona a feature **"AI Generated" (nível 2)**: geração/ajuste de fluxo por IA em `ai.service.js`. Não confundir com o AI Agent (nível 3) descrito aqui.
+
 ### F3.1 — Infra & provider abstraction (sprint 1)
+
+> **Estado real (2026-06-16): ✅ ENTREGUE.** Tudo presente e wired. `/ai/health` ainda checa a tabela `ai_usage_logs` além dos providers (mais rico que a spec).
 
 **Entregáveis**
 - Migrations 3.1, 3.2, 3.3 aplicadas em dev
@@ -288,6 +304,8 @@ interface ChatbotAIConfig {
 - Logs aparecem em `ai_usage_logs`
 
 ### F3.2 — Pipeline de ingestão (sprint 1-2)
+
+> **Estado real (2026-06-16): ✅ ENTREGUE** (`feat/ai-ingestion-pipeline`). Implementado: `parsers/*` (pdf via `pdf-parse` v2, docx via `mammoth`, html via `cheerio`, txt/md), `chunker.js` (recursivo + overlap, `token_count` via `tiktoken` cl100k_base), `storage.js` (disco local + sha256), `ingestion.worker.js` reescrito (parse→chunk→embed em batches de 50→upsert transacional em `knowledge_chunks`, `logUsage` por batch, falha definitiva só na última tentativa), `ingestion.queue.js` wired, entrypoint `npm run worker`, `multer` para upload, `redis:7-alpine` + serviço `worker` no compose. Endpoints `/knowledge-bases` (CRUD) e `/knowledge-documents` montados em `routes/index.js`, em `modules/ai/knowledge/` (guards/mapper/service/controller). A camada vazia `modules/knowledge/` foi removida (consolidação). Verificado end-to-end: migrate limpo, integração do service (tenancy/dedupe/cascade) 20/20, mounts reais (não-stub), **smoke real com OpenAI** (PDF → 49 chunks → embeddings 1536d → `indexed` em ~6s, 8257 tokens em `ai_usage_logs`, custo US$ 0,000165), e **retry 3× + dead-letter** confirmado via erro real do provider (`429` → `failed` após esgotar tentativas). Hardening pós-review: `.doc` legado barrado no upload (mammoth só lê `.docx`); `embeddingModel` restrito a modelos de 1536 dims; doc sem texto extraível vira `failed` (não `indexed` com 0 chunks); erros do multer viram 400.
 
 **Entregáveis**
 - BullMQ + Redis no docker-compose (`redis:7-alpine`)
@@ -305,6 +323,8 @@ interface ChatbotAIConfig {
 
 ### F3.3 — RAG retrieval (sprint 2)
 
+> **Estado real (2026-06-17): ✅ ENTREGUE** (`feat/ai-rag-retrieval`). `rag/retriever.js`: top-K pgvector (`embedding <=> $1`) filtrado por `knowledge_base_id`, agora trazendo a coluna `embedding` para um **MMR de verdade** — `cosineSimilarity` real sobre os vetores parseados dos candidatos (substituiu a heurística `1 - |score_a - score_b|`). `rag/citation.builder.js` novo: forma única de saída `{ chunkId, documentId, title, snippet, score }`, sem vazar o vetor. `rag/rag.service.js` reescrito: assinatura tenant-aware `retrieve(organizationId, knowledgeBaseId, query, opts)` com `assertKbOwned`, defaults via env (`RAG_TOP_K_RETRIEVE/RETURN`, `RAG_MIN_SIMILARITY`) e log do embed da query em `ai_usage_logs`. Exposto em `POST /knowledge-bases/:id/search` (zod + tenant-scoped). Duplicata vazia `ai/rag.service.js` deletada. Smoke: `npm run rag:smoke -- --kb <id> --query "..."` (inclui prova cross-tenant).
+
 **Entregáveis**
 - `retriever.js`: query SQL com `embedding <=> $1` ordenando por similaridade, filtrando por `knowledge_base_id`
 - MMR (Maximal Marginal Relevance) em memória para diversificar top-K
@@ -316,6 +336,8 @@ interface ChatbotAIConfig {
 - Cross-tenant proof: query em KB de outra org retorna 0 resultados (testar com 2 orgs no seed)
 
 ### F3.4 — Agent engine + tools (sprint 2-3)
+
+> **Estado real (2026-06-18): ✅ ENTREGUE e VALIDADO** (`feat/ai-agent-engine`). `agent.engine.run()` faz o loop tool-use nativo (chat → tool_use → realimenta turno `assistant`+`tool` → repete até stop ou `AI_MAX_AGENT_ITERATIONS`). Criados: `engine/context.builder.js` (system+guardrails+contexto recuperado+histórico; descarta `assistant` inicial p/ respeitar a alternância da Anthropic), `engine/tool.router.js` (defs + whitelist `enabledTools` + execução), `engine/tools/{search-kb,capture-field,transfer-to-human,trigger-flow}.js`, `observability/trace.logger.js` (grava `ai_agent_traces`, nunca lança). **Assinatura RAG corrigida** para a da F3.3 (`retrieve(orgId, kbId, query, opts)` → `{ citations }`). Contrato de provider **estendido** (turno `assistant` com `toolCalls` + coalescência de `tool_result` na Anthropic) p/ o tool-use multi-turno. Smoke `npm run agent:smoke -- --chatbot <id>` validou ao vivo: answer+citações, `transfer_to_human` (ticket+`waiting`), `fallback_flow` — em Anthropic `claude-sonnet-4-6` e OpenAI `gpt-4o-mini`. **Escopo engine-only**: `fallback.bridge`, re-wire do webhook e idempotência ficam na F3.5. **Pendência de tuning**: `minConfidence` default 0.65 é alto vs scores reais (~0.4–0.5) — ver risco "LLM alucinar"/calibração; ajustar na F3.7.
 
 **Entregáveis**
 - `agent.engine.run(input)` implementa loop: monta contexto → chama LLM com tools → se tool_use, executa tool → realimenta → repete até `stop` ou maxIterations (default 4)
@@ -334,6 +356,8 @@ interface ChatbotAIConfig {
 - Quando KB não tem resposta, fallback dispara e FlowEngine assume
 
 ### F3.5 — Integração com webhook e FlowEngine (sprint 3)
+
+> **Estado real (2026-06-16): ⚠️ parcialmente wired, GUARDADO.** `webhook.service.js` já despacha `chatbot.type === 'ai_agent'` para `agent.engine.run()` (F3.4 quebrado) e referencia `engine/fallback.bridge` (inexistente) — ou seja, **qualquer chatbot marcado como `ai_agent` derrubaria o processamento de mensagens inbound daquela conexão**. Em 2026-06-16 essa branch foi **envolvida em try/catch**: em falha, loga e preserva a mensagem inbound sem enviar resposta automática, em vez de estourar. Idempotência hoje é por `metadata->'evolution'->>'messageId'` (funcional), **não** pela coluna `UNIQUE` da spec. Completar de verdade só depois de F3.2→F3.4 prontos.
 
 **Entregáveis**
 - `dispatcher.js` no `webhook/evolution` resolve `chatbot.type`:
@@ -386,6 +410,28 @@ interface ChatbotAIConfig {
 **Critério de aceite**
 - Pen test básico de prompt injection não vaza system prompt
 - DPA / LGPD: org consegue exportar e deletar todos os dados de IA
+
+---
+
+### Lista de limpeza (pré-F3.2) — auditada 2026-06-16
+
+Antes de construir F3.2 de verdade, reconciliar os scaffolds órfãos/quebrados deixados por merges fora de ordem. **Decisão tomada no re-baseline:** documentar agora, deletar quando a fase dona for retomada (não apagar nada ainda, exceto o guard de segurança já aplicado no webhook).
+
+**Já aplicado (2026-06-16):**
+- [x] `webhook.service.js` — branch `type === 'ai_agent'` envolvida em try/catch para não derrubar o inbound enquanto o AgentEngine está quebrado.
+
+**Feito na F3.2 (`feat/ai-ingestion-pipeline`):**
+- [x] `server/src/modules/knowledge/{knowledge.model.js, document.model.js, knowledge.service.js}` — **decisão: consolidar em `modules/ai/`**. Os 3 arquivos vazios foram deletados; KB/documento agora vivem em `modules/ai/knowledge/`.
+- [x] `server/src/modules/ai/ingestion/ingestion.queue.js` — wired (importado por `knowledge.service` ao criar/reindexar documento; payload passa `documentId` + `jobId`).
+- [x] `server/src/modules/ai/ingestion/ingestion.worker.js` — reescrito robusto (upsert transacional, dedupe no upload por checksum, `parsers/*` + `chunker.js` criados, `logUsage` por batch, falha definitiva só na última tentativa).
+- [x] `/knowledge-bases*` e `/knowledge-documents*` montados em `routes/index.js` (via `loadOrStub`).
+- [x] `docker-compose` ganhou `redis:7-alpine` (+ serviço `worker`).
+
+**Feito na F3.3 (`feat/ai-rag-retrieval`):**
+- [x] `server/src/modules/ai/rag.service.js` — duplicata vazia (0 bytes) deletada.
+
+**Feito na F3.4 (`feat/ai-agent-engine`):**
+- [x] `server/src/modules/ai/engine/agent.engine.js` — **completado**: criados `context.builder`, `tool.router`, `tools/` (search_kb/capture_field/transfer_to_human/trigger_flow) e `observability/trace.logger`. Assinatura RAG corrigida. `fallback.bridge` fica na F3.5 (handoff real ao FlowEngine).
 
 ---
 
@@ -507,6 +553,8 @@ COST_OPENAI_EMBED_PER_1M=0.02
 ---
 
 ## 11. Sequência sugerida de PRs
+
+> ⚠️ **Esta sequência não foi seguida (2026-06-16).** PR A (schema/PR B providers) está feita, mas pedaços de PR C/D/E (ingestion, rag, agent engine) e PR G (webhook wire) foram mergeados fora de ordem e incompletos via `iago-scosta/AI-integracao`. Use o quadro "Estado real auditado" da seção 6 como verdade, não a lista abaixo. Próxima PR efetiva: **F3.2 (ingestion) redefinida**, precedida pela limpeza dos scaffolds (ver fim da seção 6).
 
 1. **PR A** — migrations + pgvector + tabelas auxiliares (`feat/ai-schema`)
 2. **PR B** — provider abstraction + adapters + health (`feat/ai-providers`)

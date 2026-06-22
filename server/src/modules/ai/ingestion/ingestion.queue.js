@@ -1,3 +1,9 @@
+// server/src/modules/ai/ingestion/ingestion.queue.js
+//
+// Producer da fila de ingestão (BullMQ). É chamado pelo knowledge.service ao
+// criar/reindexar um documento. O consumer é ingestion.worker.js (processo
+// separado, `npm run worker`).
+
 const { Queue } = require('bullmq');
 
 const QUEUE_NAME = 'ingestion';
@@ -7,18 +13,25 @@ let ingestionQueue = null;
 
 function getQueue() {
   if (!REDIS_URL) return null;
+
   if (!ingestionQueue) {
-    ingestionQueue = new Queue(QUEUE_NAME, { connection: { url: REDIS_URL } });
+    ingestionQueue = new Queue(QUEUE_NAME, {
+      connection: { url: REDIS_URL },
+    });
   }
+
   return ingestionQueue;
 }
 
 /**
  * Enfileira o processamento de um documento.
  * @param {{ documentId: string, jobId: string }} payload
+ *   documentId → linha em knowledge_documents
+ *   jobId      → linha em knowledge_ingestion_jobs (rastreio do ciclo de vida)
  */
 async function enqueueIngestion({ documentId, jobId }) {
   const queue = getQueue();
+
   if (!queue) {
     throw new Error('REDIS_URL nao configurado');
   }
