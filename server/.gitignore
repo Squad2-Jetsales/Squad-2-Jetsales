@@ -1,0 +1,3 @@
+# Arquivos enviados na ingestão (F3.2) — armazenamento local de documentos.
+# Os bytes ficam em disco; o banco guarda só o storage_key.
+storage/

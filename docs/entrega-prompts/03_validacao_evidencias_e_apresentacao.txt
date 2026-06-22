@@ -1,0 +1,83 @@
+Validação, evidências e apresentação da rastreabilidade
+
+Documento de apoio à apresentação dos critérios 1.4 (rastreabilidade do repositório) e
+1.5 (prompts que falharam) do projeto Squad-2-Jetsales / JetSales.
+
+
+1. Como os outputs da IA foram validados
+
+A equipe não aceitou os outputs da IA automaticamente. Tudo o que a IA sugeriu passou
+por conferência humana antes de entrar no projeto. Os resultados foram revisados por
+meio de:
+
+- execução do projeto (subir backend e frontend e usar o sistema);
+- testes de build (frontend Vite/React e backend Node.js);
+- testes de rotas de API (ex.: /health, login, /auth/me, whatsapp-connections/status);
+- revisão visual das telas (Dashboard, Chatbots, Conexões, Tickets, Login);
+- verificação dos commits (mensagem, arquivos alterados e diff);
+- comparação de comportamento antes/depois de cada correção;
+- correções manuais quando o output não atendia o critério de aceite;
+- registro do que foi feito na documentação (docs/ e esta pasta de entrega).
+
+Para os bugs da Fase 2, a regra foi objetiva: um item só era considerado "fechado"
+depois de reproduzir o cenário descrito em docs/BUGS_FASE2.md e confirmar o resultado
+esperado.
+
+
+2. Evidências verificáveis
+
+O avaliador pode conferir, sem precisar de credenciais:
+
+- histórico de commits no Git/GitHub (86 commits, padrão Conventional Commits);
+- arquivos modificados por commit (git log --stat ou git show <commit>);
+- documentação criada em docs/entrega-prompts/ (arquivos 01, 02 e 03);
+- documentação técnica versionada: README.md, docs/DEPLOY.md, docs/EVOLUTION_API.md,
+  docs/DEMO.md, docs/PLANO_FASE2.md, docs/BUGS_FASE2.md;
+- comandos de verificação (git log, git diff, git status, git show);
+- Pull Requests no GitHub (ex.: PR #33), na aba "Pull requests";
+- branches organizadas por tema (deploy/vercel, evolutionapi, auditoria, segurança).
+
+Itens que dependem do ambiente do time (evidência parcial):
+- prints da aplicação em produção e a demo ao vivo do WhatsApp dependem do ambiente
+  configurado (Vercel, Render e Evolution API) e das credenciais de demo, que ficam
+  fora do Git. O roteiro está em docs/DEMO.md.
+
+
+3. Como apresentar o item 1.4
+
+Roteiro curto de fala:
+
+"Para garantir rastreabilidade, mantivemos o projeto versionado no GitHub. Com isso,
+conseguimos verificar o histórico de alterações, os commits realizados, os arquivos
+modificados e a evolução das funcionalidades. Usamos mensagens padronizadas (feat, fix,
+docs, chore) e branches separadas por tema, como segurança, deploy e integração de
+WhatsApp. Além disso, organizamos documentos de apoio na pasta docs/entrega-prompts/,
+com os prompts utilizados, os ajustes realizados e a validação dos resultados. Não
+criamos uma pasta separada de prompts para evitar poluir o repositório; em vez disso,
+documentamos os exemplos, falhas, ajustes e validações em arquivos específicos dentro
+de docs/entrega-prompts/, que ficam rastreáveis pelo próprio histórico Git."
+
+
+4. Como apresentar o item 1.5
+
+Roteiro curto de fala:
+
+"Também registramos exemplos de prompts que inicialmente não funcionaram bem. Em alguns
+casos, eles eram amplos demais — como pedir para 'auditar e corrigir o projeto inteiro'
+— ou não definiam controle de ambiente, como na integração com o WhatsApp. A equipe
+ajustou esses prompts, dividindo em fases, adicionando critérios de aceite, exigindo
+lista de arquivos alterados e testes. Depois, os outputs foram conferidos manualmente
+por meio da execução do sistema e da revisão dos resultados."
+
+
+5. Checklist para o dia da apresentação
+
+- [ ] Abrir o repositório no GitHub.
+- [ ] Mostrar o histórico de commits (git log --oneline ou a aba de commits).
+- [ ] Mostrar um commit aberto com git show (ex.: o de segurança aaa798a).
+- [ ] Mostrar a pasta docs/entrega-prompts/.
+- [ ] Abrir o arquivo 01 (rastreabilidade) e citar 2 ou 3 evidências reais.
+- [ ] Abrir o arquivo 02 (prompts que falharam).
+- [ ] Explicar rapidamente os dois prompts que falharam.
+- [ ] Mostrar que houve correção e validação (ondas da Fase 2 / inventário de bugs).
+- [ ] (Opcional) Mostrar a aplicação rodando, seguindo docs/DEMO.md.

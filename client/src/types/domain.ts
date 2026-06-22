@@ -40,6 +40,7 @@ export interface ChatbotAIConfig {
 export interface ChatbotMetrics {
   connections: number;
   totalNodes: number;
+  totalEdges?: number;
   messagesProcessed: number;
 }
 
@@ -90,6 +91,7 @@ export interface MenuOption {
 export interface FlowNodeData {
   label?: string;
   text?: string;
+  variable?: string;
   options?: MenuOption[];
   condition?: {
     field: string;
@@ -132,10 +134,15 @@ export interface WhatsAppConnection {
   chatbotId: UUID | null;
   name: string;
   phoneNumber: string;
+  evolutionInstance?: string;
   status: WhatsAppStatus;
   qrCode?: string;
+  qrCodeValue?: string;
   qrExpiresAt?: string;
   lastActivityAt?: string;
+  pairingCode?: string;
+  createdAt?: string;
+  updatedAt?: string;
   metricsToday?: { conversations: number };
 }
 

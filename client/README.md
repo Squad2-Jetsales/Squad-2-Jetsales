@@ -21,10 +21,12 @@ Quando rodado a partir da raiz do monorepo, use `npm run client` (inicia o Vite 
 Crie um `.env.local`:
 
 ```
-VITE_API_BASE_URL=https://api.jetgo.jetsales.com.br
+VITE_API_BASE_URL=http://localhost:3001
 ```
 
-A API real deve estar acessível com CORS configurado (ver abaixo). Sem ela, todas as telas mostram skeleton → erro com botão "Tentar novamente".
+Em producao na Vercel, deixe `VITE_API_BASE_URL` ausente/vazio. O frontend chama `/api/...` e o `vercel.json` faz rewrite para o backend Render.
+
+A API real deve estar acessível com CORS configurado (ver abaixo). Em desenvolvimento sem `VITE_API_BASE_URL`, o app pode entrar em modo preview para revisao visual.
 
 ## Auth — contrato com o backend
 

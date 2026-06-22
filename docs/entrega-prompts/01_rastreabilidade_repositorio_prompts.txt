@@ -1,0 +1,168 @@
+1.4 Versão final do repositório de prompts com rastreabilidade de alterações
+
+Este documento descreve como o projeto Squad-2-Jetsales (plataforma JetSales, para
+criação de chatbots de atendimento) manteve a rastreabilidade das alterações ao longo
+do desenvolvimento, atendendo ao critério 1.4 da entrega.
+
+
+1. Objetivo da rastreabilidade
+
+O repositório foi usado durante todo o projeto para registrar a evolução do trabalho,
+de forma que qualquer pessoa consiga verificar o que foi alterado, quando e por quê.
+Isso vale para o código (frontend e backend), para a documentação técnica, para as
+correções de bugs, para os ajustes de segurança e para as decisões de produto tomadas
+ao longo das fases.
+
+Na prática, a rastreabilidade serve para três coisas:
+- comprovar que o sistema foi construído de forma incremental e revisável;
+- permitir voltar a um ponto anterior e entender uma decisão;
+- mostrar ao avaliador a diferença entre o estado inicial e a versão final.
+
+
+2. Local de rastreabilidade
+
+A rastreabilidade principal do projeto está no histórico Git, hospedado no GitHub.
+
+- Repositório remoto: https://github.com/iago-scosta/Squad-2-Jetsales.git
+- Branch atual de trabalho: integration/seguranca-e-fluxos
+- Branch principal de integração: develop
+
+Branches relevantes encontradas no repositório (organização por tema):
+- develop ............................. linha principal de integração
+- deploy/vercel ....................... configuração de deploy (Vercel + Render)
+- evolutionapi ........................ integração de WhatsApp via Evolution API
+- integration/felipe-autoreply ........ integração do auto-reply do bot
+- fix/auditoria-geral-sem-whatsapp .... correções da auditoria geral
+- integration/auditoria-felipe-sem-whatsapp ... integração das auditorias
+- fix/bugs-fase-2-real ................ correção dos bugs da Fase 2
+- integration/seguranca-e-fluxos ...... integração de segurança e fluxos (atual)
+
+Observação: as branches com o sufixo "sem-whatsapp" indicam que a auditoria e as
+correções foram organizadas de modo que o restante do sistema pudesse ser revisado e
+validado de forma independente da integração externa de WhatsApp.
+
+
+3. Como verificar as modificações
+
+Qualquer avaliador pode reproduzir a verificação com comandos simples de Git:
+
+- git log --oneline
+    lista o histórico de commits em uma linha cada (visão rápida da evolução).
+
+- git log --stat
+    mostra, por commit, quais arquivos foram alterados e quantas linhas.
+
+- git status
+    mostra o estado atual da árvore de trabalho.
+
+- git diff
+    mostra as diferenças ainda não commitadas.
+
+- git show <commit>
+    abre um commit específico com a mensagem e o diff completo.
+    Ex.: git show aaa798a   (commit de segurança: helmet + rate-limit)
+
+- git log -- docs/
+    lista apenas os commits que tocaram a documentação.
+
+- Histórico de Pull Requests no GitHub
+    Há ao menos um PR registrado no histórico (ex.: "Merge pull request #33").
+    Os PRs podem ser consultados na aba "Pull requests" do repositório no GitHub.
+
+
+4. Evidências encontradas no repositório
+
+As evidências abaixo foram observadas diretamente no histórico e nos arquivos do
+projeto (commits citados pelo hash curto):
+
+a) Volume e padrão de commits
+   - 86 commits no histórico da branch atual.
+   - Uso de mensagens no padrão Conventional Commits, o que facilita a leitura da
+     evolução. Distribuição aproximada por tipo: 18 "fix", 15 "feat", 5 "docs",
+     4 "chore".
+
+b) Commits de correção (fix)
+   - 015ba6c  fix(auth): login determinístico quando o e-mail duplica entre orgs.
+   - 3a25f45  fix(flow): tenancy nas sessões em memória (bugs B-14 e B-11).
+   - fa8d08e  fix: corrige envio de respostas no WhatsApp.
+   - 5626941  fix: corrige tela branca de tickets e normaliza conversas com contato.
+
+c) Commits de segurança
+   - 039d7de  fix(security): remove rota /setup com credenciais hardcoded.
+   - aaa798a  feat(security): adiciona helmet e rate-limit em /login e /forgot-password.
+   - c40f295  chore(deps): npm audit fix sem breaking changes (server com 0 vulns).
+
+d) Commits de integração
+   - Merge do PR #33 (integração do auto-reply do Felipe).
+   - Merges das branches de auditoria (fix/auditoria-geral-sem-whatsapp e
+     fix/bugs-fase-2-real) para a integração.
+
+e) Commits de deploy
+   - 6c5f47c  fix(deploy): proxy de /api via rewrite do Vercel para cookies
+     first-party.
+   - Branch dedicada deploy/vercel + guia docs/DEPLOY.md.
+
+f) Commits de documentação
+   - 71538a4  docs(fase2): plano executivo e inventário de bugs da Fase 2.
+   - 63f00fe  docs: roteiro de apresentação e demo.
+   - a06cca1  docs: documenta integração com a Evolution API.
+   - b8fc0b3  docs: guia de deploy no Render e Vercel.
+
+g) Arquivos de documentação versionados (pasta docs/)
+   - docs/PLANO_FASE2.md ..... plano de fechamento da Fase 2, em 5 ondas, com
+                               Definition of Done e decisões de produto datadas.
+   - docs/BUGS_FASE2.md ...... inventário de bugs (B-01 a B-15) com severidade
+                               (P0/P1/P2), sintoma, causa raiz, passos de
+                               reprodução e critério de aceite.
+   - docs/DEMO.md ............ roteiro de apresentação/demo da aplicação.
+   - docs/DEPLOY.md .......... guia de deploy (Vercel + Render + PostgreSQL).
+   - docs/EVOLUTION_API.md ... documentação da integração de WhatsApp.
+   - README.md ............... visão geral e URLs de produção.
+
+h) Alterações no frontend (pasta client/)
+   - Aplicação React + Vite + TypeScript (telas de Login, Dashboard, Chatbots,
+     Conexões, Tickets, Editor de Chatbot).
+   - b215552  feat: esconde a UI de IA ("Criar com IA" / "Ajustar com IA") atrás
+     da feature flag VITE_ENABLE_AI.
+
+i) Alterações no backend (pasta server/)
+   - API Node.js modular (auth, flow, webhook, whatsapp-connections, setup).
+   - Correções no motor de fluxo (FlowEngine), no webhook e nas sessões.
+
+j) Alterações de integração externa
+   - Branch evolutionapi e documento docs/EVOLUTION_API.md descrevendo variáveis
+     de ambiente, endpoints internos, webhook e cuidados de segurança.
+
+Nota sobre a organização dos prompts: a equipe optou por não criar uma pasta separada
+só para prompts, para não poluir o repositório. A rastreabilidade dos prompts e das
+decisões de IA fica no histórico Git e nos documentos de apoio desta etapa de entrega
+(pasta docs/entrega-prompts/). O próprio repositório principal também serve como
+evidência da evolução do uso da IA, porque concentra os commits, a documentação, as
+correções, a integração, o deploy e os arquivos de entrega.
+
+
+5. Organização sugerida para a entrega
+
+Para facilitar a avaliação, os documentos de apoio aos critérios 1.4 e 1.5 foram
+organizados na pasta:
+
+    docs/entrega-prompts/
+
+Conteúdo:
+    01_rastreabilidade_repositorio_prompts.txt   (este arquivo — critério 1.4)
+    02_exemplos_prompts_que_falharam.txt         (critério 1.5)
+    03_validacao_evidencias_e_apresentacao.txt   (apoio à apresentação)
+
+Essa pasta reúne, em um só lugar, a explicação da rastreabilidade, os exemplos de
+prompts que falharam e o roteiro de validação, mantendo o restante do repositório
+(código e documentação técnica) inalterado.
+
+
+6. Conclusão
+
+A versão final do repositório permite acompanhar a evolução do projeto e verificar, de
+forma objetiva, as modificações feitas durante o desenvolvimento. O histórico Git no
+GitHub registra correções, integrações, ajustes de segurança, deploy e documentação,
+com mensagens padronizadas e branches organizadas por tema. Somados aos documentos da
+pasta docs/ e a esta pasta de entrega, esses registros tornam o trabalho — e a evolução
+do uso da IA ao longo dele — rastreável e auditável do início à versão entregue.

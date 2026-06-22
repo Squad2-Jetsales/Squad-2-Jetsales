@@ -10,6 +10,11 @@ import { CreateAIChatbotDialog } from "@/components/chatbot/CreateAIChatbotDialo
 import { CreateManualChatbotDialog } from "@/components/chatbot/CreateManualChatbotDialog";
 import { chatbotsApi } from "@/lib/api/chatbots";
 
+// Botões de IA ficam atrás de feature flag — o backend de aiGenerate/aiAdjust
+// retorna 501 (não implementado) e seria má UX deixar o usuário clicar e ver
+// erro. Implementação real fica para a Fase 3 (B-04).
+const AI_ENABLED = import.meta.env.VITE_ENABLE_AI === "true";
+
 export default function ChatbotsPage() {
   const [aiOpen, setAiOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -27,14 +32,16 @@ export default function ChatbotsPage() {
         subtitle="Crie, edite e publique seus chatbots WhatsApp"
         actions={
           <>
-            <Button
-              variant="outline"
-              onClick={() => setAiOpen(true)}
-              className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
-            >
-              <Sparkles className="h-4 w-4" />
-              Criar com IA
-            </Button>
+            {AI_ENABLED && (
+              <Button
+                variant="outline"
+                onClick={() => setAiOpen(true)}
+                className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
+              >
+                <Sparkles className="h-4 w-4" />
+                Criar com IA
+              </Button>
+            )}
             <Button onClick={() => setManualOpen(true)}>
               <Plus className="h-4 w-4" />
               Criar Manualmente
@@ -79,17 +86,21 @@ export default function ChatbotsPage() {
           </div>
           <h3 className="mt-4 text-lg font-semibold text-foreground">Nenhum chatbot ainda</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Crie seu primeiro chatbot manualmente ou peça para a IA construir.
+            {AI_ENABLED
+              ? "Crie seu primeiro chatbot manualmente ou peça para a IA construir."
+              : "Crie seu primeiro chatbot manualmente."}
           </p>
           <div className="mt-5 flex justify-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setAiOpen(true)}
-              className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
-            >
-              <Sparkles className="h-4 w-4" />
-              Criar com IA
-            </Button>
+            {AI_ENABLED && (
+              <Button
+                variant="outline"
+                onClick={() => setAiOpen(true)}
+                className="border-ai/40 text-ai hover:bg-ai-soft hover:text-ai"
+              >
+                <Sparkles className="h-4 w-4" />
+                Criar com IA
+              </Button>
+            )}
             <Button onClick={() => setManualOpen(true)}>
               <Plus className="h-4 w-4" />
               Criar Manualmente
@@ -106,7 +117,7 @@ export default function ChatbotsPage() {
         </div>
       )}
 
-      <CreateAIChatbotDialog open={aiOpen} onOpenChange={setAiOpen} />
+      {AI_ENABLED && <CreateAIChatbotDialog open={aiOpen} onOpenChange={setAiOpen} />}
       <CreateManualChatbotDialog open={manualOpen} onOpenChange={setManualOpen} />
     </PageContainer>
   );

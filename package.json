@@ -1,12 +1,17 @@
 {
   "devDependencies": {
+    "@types/node": "^25.8.0",
+    "@vitejs/plugin-react-swc": "^4.3.1",
     "concurrently": "^9.2.1",
     "vitest": "^4.1.5"
   },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "cd server && node src/app.js",
-    "client": "cd client && npm start"
+    "client": "cd client && npm start",
+    "migrate:latest": "cd server && npm run migrate:latest",
+    "migrate:rollback": "cd server && npm run migrate:rollback",
+    "migrate:make": "cd server && npm run migrate:make"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

@@ -1,3 +1,6 @@
+# Claude Code worktrees & session data
+.claude/
+
 # Logs
 logs
 *.log
@@ -69,6 +72,7 @@ web_modules/
 .env
 .env.*
 !.env.example
+!.env.docker.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -123,6 +127,7 @@ dist
 .tern-port
 
 # Stores VSCode versions used for testing VSCode extensions
+.vscode
 .vscode-test
 
 # yarn v3
@@ -137,3 +142,11 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+.vercel
+.tools/
+.cloudflared-*.log
+
+# Slash commands customizados do Claude Code (devem ser versionados)
+!.claude/
+.claude/*
+!.claude/commands/

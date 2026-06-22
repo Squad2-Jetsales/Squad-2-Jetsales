@@ -61,7 +61,7 @@ export function ChatbotCard({ chatbot }: ChatbotCardProps) {
   const remove = useMutation({
     mutationFn: () => chatbotsApi.remove(chatbot.id),
     onSuccess: () => {
-      toast.success("Chatbot excluído");
+      toast.success("Chatbot excluido");
       qc.invalidateQueries({ queryKey: ["chatbots"] });
       setConfirmOpen(false);
     },
@@ -72,7 +72,7 @@ export function ChatbotCard({ chatbot }: ChatbotCardProps) {
     try {
       return format(parseISO(chatbot.updatedAt), "dd/MM/yyyy", { locale: ptBR });
     } catch {
-      return "—";
+      return "-";
     }
   })();
 
@@ -113,15 +113,13 @@ export function ChatbotCard({ chatbot }: ChatbotCardProps) {
         </div>
       </div>
 
-      {chatbot.description && (
-        <p className="mt-2 text-sm text-muted-foreground">{chatbot.description}</p>
-      )}
+      {chatbot.description && <p className="mt-2 text-sm text-muted-foreground">{chatbot.description}</p>}
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Conexões Ativas" value={chatbot.metrics?.connections ?? 0} />
+        <Metric label="Conexoes Ativas" value={chatbot.metrics?.connections ?? 0} />
         <Metric label="Total de Etapas" value={chatbot.metrics?.totalNodes ?? 0} />
         <Metric label="Mensagens Processadas" value={chatbot.metrics?.messagesProcessed ?? 0} />
-        <Metric label="Última Modificação" value={updatedAt} small />
+        <Metric label="Ultima Modificacao" value={updatedAt} small />
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -129,7 +127,16 @@ export function ChatbotCard({ chatbot }: ChatbotCardProps) {
           <Pencil className="h-4 w-4" />
           Editar Fluxo
         </Button>
-        <Button variant="ghost" disabled title="Disponível em breve">
+        <Button
+          variant="ghost"
+          onClick={() => {
+            if (!chatbot.activeFlowId) {
+              toast.error("Este chatbot ainda nao tem um fluxo ativo para testar");
+              return;
+            }
+            navigate(`/chatbots/${chatbot.id}?tester=1`);
+          }}
+        >
           <PlayCircle className="h-4 w-4" />
           Testar Bot
         </Button>
@@ -140,7 +147,7 @@ export function ChatbotCard({ chatbot }: ChatbotCardProps) {
         <Button
           variant="ghost"
           onClick={() => setConfirmOpen(true)}
-          className="text-danger hover:bg-danger-soft hover:text-danger ml-auto"
+          className="ml-auto text-danger hover:bg-danger-soft hover:text-danger"
         >
           <Trash2 className="h-4 w-4" />
           Excluir
@@ -152,7 +159,7 @@ export function ChatbotCard({ chatbot }: ChatbotCardProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir chatbot?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O chatbot <strong>{chatbot.name}</strong> e todos os seus fluxos serão removidos.
+              Esta acao nao pode ser desfeita. O chatbot <strong>{chatbot.name}</strong> e todos os seus fluxos serao removidos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -26,7 +26,9 @@ export const ticketsApi = {
   listTickets: (params: { status?: "open" | "closed"; search?: string } = {}) =>
     api.get<Ticket[]>(`/tickets${qs(params)}`),
   listConversations: (status: ConversationFilter = "all") =>
-    api.get<ConversationWithContact[]>(`/conversations${qs({ status })}`),
+    api.get<ConversationWithContact[]>(
+      `/conversations${qs({ status: status === "all" ? undefined : status })}`,
+    ),
   getConversation: (id: string) =>
     api.get<ConversationDetail>(`/conversations/${id}`),
   listMessages: (id: string, cursor?: string, limit = 50) =>
